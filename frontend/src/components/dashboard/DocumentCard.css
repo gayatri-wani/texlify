@@ -1,0 +1,11 @@
+/* ── Download button ── */
+.doc-card__btn--download {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--color-info);
+  border-color: transparent;
+  padding: 6px 8px;
+}
+
+.doc-card__btn--download:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
