@@ -1,81 +1,128 @@
-import { FileText, Trash2, MessageSquare, Clock, Download } from 'lucide-react'
-import { documentService } from '../../services/documentService'
-import { toast } from 'react-hot-toast'
+import { useState } from 'react'
+import {
+  FileText, Trash2, Edit3, Download, Check, X, Clock
+} from 'lucide-react'
 import './DocumentCard.css'
 
-const DocumentCard = ({ document, onSelect, onDelete, isSelected }) => {
+const DocumentCard = ({ document, onSelect, onDelete, onRename, isSelected }) => {
+  const [editing, setEditing]   = useState(false)
+  const [newTitle, setNewTitle] = useState(document.title)
+  const [saving, setSaving]     = useState(false)
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024)       return `${bytes} B`
+    if (bytes < 1024*1024)  return `${(bytes/1024).toFixed(1)} KB`
+    return `${(bytes/(1024*1024)).toFixed(1)} MB`
+  }
 
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: 'numeric', month: 'short', year: 'numeric',
+      day: '2-digit', month: 'short', year: 'numeric'
     })
   }
 
-  const formatSize = (bytes) => {
-    if (!bytes) return '—'
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  }
-
-  const handleDownload = async (e) => {
-    e.stopPropagation()
+  const handleRenameSubmit = async (e) => {
+    e.preventDefault()
+    if (!newTitle.trim() || newTitle.trim() === document.title) {
+      setEditing(false)
+      setNewTitle(document.title)
+      return
+    }
+    setSaving(true)
     try {
-      await documentService.download(document.id, document.original_filename)
-      toast.success('Download started!')
+      await onRename(document.id, newTitle.trim())
+      setEditing(false)
     } catch {
-      toast.error('Download failed')
+      setNewTitle(document.title)
+      setEditing(false)
+    } finally {
+      setSaving(false)
     }
   }
 
-  return (
-    <div className={`doc-card ${isSelected ? 'doc-card--selected' : ''}`}>
+  const handleRenameCancel = () => {
+    setNewTitle(document.title)
+    setEditing(false)
+  }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') handleRenameCancel()
+  }
+
+  return (
+    <div
+      className={`doc-card ${isSelected ? 'doc-card--selected' : ''}`}
+      onClick={() => !editing && onSelect(document)}
+    >
       <div className="doc-card__icon">
-        <FileText size={22} />
+        <FileText size={18} />
       </div>
 
       <div className="doc-card__info">
-        <h4 className="doc-card__title">{document.title}</h4>
+        {editing ? (
+          <form
+            className="doc-card__rename-form"
+            onSubmit={handleRenameSubmit}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              className="doc-card__rename-input"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              disabled={saving}
+            />
+            <div className="doc-card__rename-actions">
+              <button
+                type="submit"
+                className="doc-card__rename-btn doc-card__rename-btn--confirm"
+                disabled={saving}
+                title="Save"
+              >
+                <Check size={12} />
+              </button>
+              <button
+                type="button"
+                className="doc-card__rename-btn doc-card__rename-btn--cancel"
+                onClick={handleRenameCancel}
+                title="Cancel"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="doc-card__title">{document.title}</p>
+        )}
         <div className="doc-card__meta">
-          <span className="doc-card__meta-item">
-            <Clock size={11} />{formatDate(document.created_at)}
-          </span>
-          <span className="doc-card__meta-dot">·</span>
-          <span className="doc-card__meta-item">{formatSize(document.file_size)}</span>
+          <span><Clock size={10} /> {formatDate(document.created_at)}</span>
+          <span>{formatSize(document.file_size)}</span>
           {document.page_count > 0 && (
-            <>
-              <span className="doc-card__meta-dot">·</span>
-              <span className="doc-card__meta-item">{document.page_count}p</span>
-            </>
+            <span>{document.page_count}p</span>
           )}
         </div>
       </div>
 
-      <div className="doc-card__actions">
+      <div
+        className="doc-card__actions"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
-          className="doc-card__btn doc-card__btn--edit"
-          onClick={() => onSelect(document)}
-          title="Edit with AI"
+          className="doc-card__action-btn"
+          onClick={() => { setEditing(true); setNewTitle(document.title) }}
+          title="Rename"
         >
-          <MessageSquare size={14} />
-          <span>Edit</span>
+          <Edit3 size={13} />
         </button>
         <button
-          className="doc-card__btn doc-card__btn--download"
-          onClick={handleDownload}
-          title="Download"
-        >
-          <Download size={14} />
-        </button>
-        <button
-          className="doc-card__btn doc-card__btn--delete"
+          className="doc-card__action-btn doc-card__action-btn--danger"
           onClick={() => onDelete(document.id)}
           title="Delete"
         >
-          <Trash2 size={14} />
+          <Trash2 size={13} />
         </button>
       </div>
-
     </div>
   )
 }

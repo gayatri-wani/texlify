@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader, Sparkles, RotateCcw, Download } from 'lucide-react'
+import {
+  Send, Bot, User, Loader, Sparkles,
+  RotateCcw, Image as ImageIcon
+} from 'lucide-react'
 import { documentService } from '../../services/documentService'
+import ImageUpload from './ImageUpload'
 import { toast } from 'react-hot-toast'
 import './ChatInterface.css'
 
@@ -12,11 +16,11 @@ const EXAMPLE_COMMANDS = [
   'Add a watermark that says CONFIDENTIAL',
   'Apply SPPU format to the document',
   'Make all chapter titles start on a new page',
-  'Insert a table with 5 rows and 4 columns',
+  'Highlight all headings in yellow',
   'Apply APA format',
   'Convert document to IEEE format',
   'Add a cover page with title My Report',
-  'Highlight all headings in yellow',
+  'Set font to Times New Roman 12pt for body text',
 ]
 
 const DOWNLOAD_KEYWORDS = [
@@ -25,17 +29,17 @@ const DOWNLOAD_KEYWORDS = [
 ]
 
 const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) => {
-  const [input, setInput]       = useState('')
-  const [messages, setMessages] = useState([])
-  const bottomRef               = useRef()
-  const textareaRef             = useRef()
+  const [input, setInput]             = useState('')
+  const [messages, setMessages]       = useState([])
+  const [showImageUpload, setShowImageUpload] = useState(false)
+  const bottomRef                     = useRef()
+  const textareaRef                   = useRef()
 
   useEffect(() => {
     setMessages([{
-      id: Date.now(),
-      role: 'assistant',
+      id: Date.now(), role: 'assistant',
       text: document
-        ? `Document **${document.title}** is ready. What would you like to do?\n\nYou can type any editing command and I'll apply it instantly. The preview on the right will update after each change.`
+        ? `Document **${document.title}** is ready. What would you like to do?\n\nType any editing command and I'll apply it instantly. The preview updates after each change.`
         : 'Please select or upload a document to get started.',
       timestamp: new Date(),
     }])
@@ -45,7 +49,6 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Auto resize textarea
   const handleInput = (e) => {
     setInput(e.target.value)
     e.target.style.height = 'auto'
@@ -61,13 +64,10 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
     }
     setMessages(prev => [...prev, userMsg])
     setInput('')
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     // Intercept download commands
-    const isDownload = DOWNLOAD_KEYWORDS.some(
-      kw => text.toLowerCase().includes(kw))
+    const isDownload = DOWNLOAD_KEYWORDS.some(kw => text.toLowerCase().includes(kw))
     if (isDownload) {
       try {
         await documentService.download(document.id, document.original_filename)
@@ -95,14 +95,12 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
 
     try {
       const result = await onSendCommand(document.id, text.trim())
-      const successCount = result?.actions_performed?.filter(
-        a => a.status === 'success').length || 0
-      const errorCount = result?.actions_performed?.filter(
-        a => a.status === 'error').length || 0
+      const successCount = result?.actions_performed?.filter(a => a.status === 'success').length || 0
+      const errorCount   = result?.actions_performed?.filter(a => a.status === 'error').length || 0
 
       let responseText = result?.message || 'Done!'
       if (errorCount > 0) {
-        responseText += `\n\n⚠️ ${errorCount} action(s) had issues. The preview has been updated.`
+        responseText += `\n\n⚠️ ${errorCount} action(s) had issues.`
       } else {
         responseText += '\n\n✅ Preview updated on the right →'
       }
@@ -112,10 +110,7 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
           ? { ...m, thinking: false, text: responseText }
           : m
       ))
-
-      // Trigger preview refresh
       if (onCommandSuccess) onCommandSuccess()
-
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Something went wrong.'
       setMessages(prev => prev.map(m =>
@@ -128,19 +123,21 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage(input)
+      e.preventDefault(); sendMessage(input)
     }
+  }
+
+  const handleImageUploaded = (serverPath, filename) => {
+    const command = `Insert image from path ${serverPath} with width 4 inches centered`
+    sendMessage(command)
+    toast.success(`Image "${filename}" will be inserted`)
   }
 
   const formatTime = (date) =>
     new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 
-  const renderText = (text) => {
-    return text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br/>')
-  }
+  const renderText = (text) =>
+    text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>')
 
   const resetChat = () => {
     setMessages([{
@@ -162,9 +159,7 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
           <div>
             <h3 className="chat__header-title">AI Document Agent</h3>
             <p className="chat__header-subtitle">
-              {document
-                ? `Editing: ${document.title}`
-                : 'No document selected'}
+              {document ? `Editing: ${document.title}` : 'No document selected'}
             </p>
           </div>
         </div>
@@ -225,9 +220,27 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
         </div>
       )}
 
+      {/* Image upload panel */}
+      {showImageUpload && (
+        <div className="chat__image-upload-wrapper">
+          <ImageUpload
+            onImageUploaded={handleImageUploaded}
+            onClose={() => setShowImageUpload(false)}
+          />
+        </div>
+      )}
+
       {/* Input area */}
       <div className="chat__input-area">
         <div className={`chat__input-container ${!document ? 'chat__input-container--disabled' : ''}`}>
+          <button
+            className="chat__image-btn"
+            onClick={() => setShowImageUpload(!showImageUpload)}
+            disabled={!document}
+            title="Upload and insert an image"
+          >
+            <ImageIcon size={15} />
+          </button>
           <textarea
             ref={textareaRef}
             className="chat__input"
@@ -254,7 +267,7 @@ const ChatInterface = ({ document, onSendCommand, loading, onCommandSuccess }) =
           </button>
         </div>
         <p className="chat__input-hint">
-          <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
+          <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line · 📎 image button to insert images
         </p>
       </div>
 
