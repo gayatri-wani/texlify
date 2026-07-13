@@ -2,8 +2,8 @@ import os
 import re
 import shutil
 from docx import Document as DocxDocument
-from docx.shared import Pt, Inches, RGBColor, Mm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, Inches, RGBColor, Mm, Emu
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -33,7 +33,7 @@ def backup_document(file_path: str) -> str:
     return backup_path
 
 
-# ── Highlight color name → hex ──────────────────────────────────────────────
+# ── Highlight maps ───────────────────────────────────────────────────────────
 HIGHLIGHT_HEX = {
     "yellow":    "FFFF00",
     "green":     "00FF00",
@@ -48,7 +48,6 @@ HIGHLIGHT_HEX = {
     "white":     "FFFFFF",
 }
 
-# Word XML valid highlight values (for w:highlight element)
 HIGHLIGHT_XML = {
     "yellow":    "yellow",
     "green":     "green",
@@ -59,45 +58,32 @@ HIGHLIGHT_XML = {
     "red":       "red",
     "turquoise": "turquoise",
     "gray":      "darkGray",
-    "white":     "none",
 }
 
 
 def _highlight_run(run, color_name: str):
-    """
-    Apply highlight to a run using character shading (w:shd on w:rPr).
-    This is the ONLY reliable method that survives save/reopen in Word.
-    The w:highlight element alone gets stripped by some Word versions.
-    """
+    """Apply highlight using BOTH w:highlight AND w:shd for maximum compatibility."""
     color_key = color_name.lower().strip()
     fill_hex  = HIGHLIGHT_HEX.get(color_key, "FFFF00")
-
     rPr = run._r.get_or_add_rPr()
-
-    # ── Method 1: w:highlight (standard highlight — yellow marker) ──────────
-    for existing in list(rPr.findall(qn('w:highlight'))):
-        rPr.remove(existing)
+    # Method 1: w:highlight
+    for el in list(rPr.findall(qn('w:highlight'))): rPr.remove(el)
     hl = OxmlElement('w:highlight')
     hl.set(qn('w:val'), HIGHLIGHT_XML.get(color_key, 'yellow'))
     rPr.append(hl)
-
-    # ── Method 2: w:shd (character shading) — survives in all Word versions ─
-    for existing in list(rPr.findall(qn('w:shd'))):
-        rPr.remove(existing)
+    # Method 2: w:shd (survives all Word versions)
+    for el in list(rPr.findall(qn('w:shd'))): rPr.remove(el)
     shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'),     'clear')
-    shd.set(qn('w:color'),   'auto')
-    shd.set(qn('w:fill'),    fill_hex)
+    shd.set(qn('w:val'),  'clear')
+    shd.set(qn('w:color'),'auto')
+    shd.set(qn('w:fill'), fill_hex)
     rPr.append(shd)
 
 
 def _remove_highlight_run(run):
-    """Remove all highlight and shading from a run"""
     rPr = run._r.get_or_add_rPr()
     for tag in ['w:highlight', 'w:shd']:
-        for el in list(rPr.findall(qn(tag))):
-            rPr.remove(el)
-    # Reset highlight color via python-docx API
+        for el in list(rPr.findall(qn(tag))): rPr.remove(el)
     try:
         from docx.enum.text import WD_COLOR_INDEX
         run.font.highlight_color = WD_COLOR_INDEX.NONE
@@ -132,7 +118,7 @@ class DocumentExecutor:
                     results.append({
                         "action": action_type,
                         "status": "skipped",
-                        "reason": "Unknown action"
+                        "reason": f"Unknown action: {action_type}"
                     })
             except Exception as e:
                 results.append({
@@ -151,21 +137,13 @@ class DocumentExecutor:
         headings = []
         for para in self.doc.paragraphs:
             text = para.text.strip()
-            if not text:
-                continue
-            if para.style.name.startswith("Heading"):
-                headings.append(para); continue
-            if re.match(r'^\d+[\.\)]\s+\S', text):
-                headings.append(para); continue
-            if re.match(r'^\d+\.\d+[\.\s]', text):
-                headings.append(para); continue
-            if re.match(r'^(chapter|section|part)\s+\d+', text, re.IGNORECASE):
-                headings.append(para); continue
-            if len(text) < 80 and para.runs and \
-               all(r.bold for r in para.runs if r.text.strip()):
-                headings.append(para); continue
-            if text.isupper() and 3 < len(text) < 80:
-                headings.append(para); continue
+            if not text: continue
+            if para.style.name.startswith("Heading"): headings.append(para); continue
+            if re.match(r'^\d+[\.\)]\s+\S', text):   headings.append(para); continue
+            if re.match(r'^\d+\.\d+[\.\s]', text):   headings.append(para); continue
+            if re.match(r'^(chapter|section|part)\s+\d+', text, re.IGNORECASE): headings.append(para); continue
+            if len(text) < 80 and para.runs and all(r.bold for r in para.runs if r.text.strip()): headings.append(para); continue
+            if text.isupper() and 3 < len(text) < 80: headings.append(para); continue
         return headings
 
     def _find_paragraphs_by_texts(self, texts: list):
@@ -177,14 +155,12 @@ class DocumentExecutor:
         return found
 
     def _iter_all_paragraphs(self):
-        """Iterate ALL paragraphs including tables — supports 500+ page docs"""
-        for para in self.doc.paragraphs:
-            yield para
+        """Iterate ALL paragraphs including tables — supports 500+ page docs."""
+        for para in self.doc.paragraphs: yield para
         for table in self.doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    for para in cell.paragraphs:
-                        yield para
+                    for para in cell.paragraphs: yield para
 
     # ─────────────────────────────────────────
     # BASIC FORMATTING
@@ -209,29 +185,34 @@ class DocumentExecutor:
             count += 1
         return f"Font set to {font_name} {size}pt for {count} paragraphs"
 
+    def action_replace_font(self, old_font="", new_font="", **kwargs):
+        """Replace a specific font name with another throughout document."""
+        count = 0
+        for para in self._iter_all_paragraphs():
+            for run in para.runs:
+                if run.font.name and run.font.name.lower() == old_font.lower():
+                    run.font.name = new_font; count += 1
+        return f"Replaced '{old_font}' with '{new_font}' in {count} runs"
+
     def action_set_heading_style(self, level=None, bold=True,
                                   color=None, font_size=None,
                                   underline=None, **kwargs):
-        headings = self._find_heading_paragraphs()
-        count = 0
+        headings = self._find_heading_paragraphs(); count = 0
         for para in headings:
             if level and para.style.name == f"Heading {level}": pass
-            elif level and para.style.name.startswith("Heading") and \
-                 para.style.name != f"Heading {level}": continue
+            elif level and para.style.name.startswith("Heading") and para.style.name != f"Heading {level}": continue
             for run in para.runs:
-                if bold      is not None: run.bold             = bold
-                if color:                 run.font.color.rgb   = hex_to_rgb(color)
-                if font_size:             run.font.size        = Pt(font_size)
-                if underline is not None: run.font.underline   = underline
+                if bold      is not None: run.bold            = bold
+                if color:                 run.font.color.rgb  = hex_to_rgb(color)
+                if font_size:             run.font.size       = Pt(font_size)
+                if underline is not None: run.font.underline  = underline
             count += 1
         if count == 0:
-            return ("No headings found. Numbered lines (1., 2., etc.) "
-                    "are detected automatically.")
+            return "No headings found. Numbered lines (1., 2., etc.) are detected automatically."
         return f"Heading style updated for {count} paragraphs"
 
-    def action_set_alignment(self, alignment="justify", apply_to="all",
-                              find_text=None, **kwargs):
-        align       = get_alignment(alignment)
+    def action_set_alignment(self, alignment="justify", apply_to="all", find_text=None, **kwargs):
+        align = get_alignment(alignment)
         heading_set = set(id(p) for p in self._find_heading_paragraphs())
         count = 0
         for para in self._iter_all_paragraphs():
@@ -250,9 +231,8 @@ class DocumentExecutor:
             section.right_margin  = Inches(right)
         return f"Margins T={top} B={bottom} L={left} R={right} inches"
 
-    def action_set_paragraph_spacing(self, before=0, after=8,
-                                      line_spacing=1.5, apply_to="all",
-                                      find_text=None, **kwargs):
+    def action_set_paragraph_spacing(self, before=0, after=8, line_spacing=1.5,
+                                      apply_to="all", find_text=None, **kwargs):
         heading_set = set(id(p) for p in self._find_heading_paragraphs())
         count = 0
         for para in self._iter_all_paragraphs():
@@ -266,6 +246,21 @@ class DocumentExecutor:
             pf.line_spacing = line_spacing
             count += 1
         return f"Spacing applied to {count} paragraphs"
+
+    def action_set_line_spacing_exact(self, value_pt=12.0, apply_to="all", **kwargs):
+        """Set exact line spacing in points (more precise than multiplier)."""
+        from docx.shared import Pt as _Pt
+        heading_set = set(id(p) for p in self._find_heading_paragraphs())
+        count = 0
+        for para in self._iter_all_paragraphs():
+            is_heading = id(para) in heading_set
+            if apply_to == "headings" and not is_heading: continue
+            if apply_to == "body"     and is_heading:     continue
+            pf = para.paragraph_format
+            pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            pf.line_spacing      = _Pt(value_pt)
+            count += 1
+        return f"Exact line spacing set to {value_pt}pt for {count} paragraphs"
 
     # ─────────────────────────────────────────
     # ADVANCED TEXT FORMATTING
@@ -297,14 +292,9 @@ class DocumentExecutor:
 
     def action_set_highlight(self, color="yellow", find_text=None,
                               apply_to="all", selected_texts=None, **kwargs):
-        """
-        Highlight using BOTH w:highlight AND w:shd (character shading).
-        w:shd is the reliable method that survives Word save/reopen.
-        """
         heading_set  = set(id(p) for p in self._find_heading_paragraphs())
         target_paras = (self._find_paragraphs_by_texts(selected_texts)
-                        if selected_texts
-                        else list(self.doc.paragraphs))
+                        if selected_texts else list(self.doc.paragraphs))
         count = 0
         for para in target_paras:
             if not para.text.strip(): continue
@@ -313,45 +303,49 @@ class DocumentExecutor:
             if apply_to == "body"     and is_heading:     continue
             if find_text and find_text.lower() not in para.text.lower(): continue
             for run in para.runs:
-                if run.text.strip():
-                    _highlight_run(run, color)
+                if run.text.strip(): _highlight_run(run, color)
             count += 1
         return f"Highlighted {count} paragraphs in {color}"
 
-    def action_remove_highlight(self, apply_to="all", find_text=None,
-                                 selected_texts=None, **kwargs):
+    def action_search_and_highlight(self, find_text="", color="yellow", **kwargs):
+        """Find all occurrences of text and highlight them."""
+        count = 0
+        for para in self._iter_all_paragraphs():
+            if find_text.lower() in para.text.lower():
+                for run in para.runs:
+                    if find_text.lower() in run.text.lower():
+                        _highlight_run(run, color)
+                        count += 1
+        return f"Highlighted {count} runs containing '{find_text}' in {color}"
+
+    def action_remove_highlight(self, apply_to="all", find_text=None, selected_texts=None, **kwargs):
         target_paras = (self._find_paragraphs_by_texts(selected_texts)
-                        if selected_texts
-                        else list(self.doc.paragraphs))
+                        if selected_texts else list(self.doc.paragraphs))
         count = 0
         for para in target_paras:
             if find_text and find_text.lower() not in para.text.lower(): continue
-            for run in para.runs:
-                _remove_highlight_run(run)
+            for run in para.runs: _remove_highlight_run(run)
             count += 1
         return f"Highlight removed from {count} paragraphs"
 
     def action_set_superscript(self, find_text=None, **kwargs):
         for para in self._iter_all_paragraphs():
             for run in para.runs:
-                if find_text is None or find_text in run.text:
-                    run.font.superscript = True
+                if find_text is None or find_text in run.text: run.font.superscript = True
         return "Superscript applied"
 
     def action_set_subscript(self, find_text=None, **kwargs):
         for para in self._iter_all_paragraphs():
             for run in para.runs:
-                if find_text is None or find_text in run.text:
-                    run.font.subscript = True
+                if find_text is None or find_text in run.text: run.font.subscript = True
         return "Subscript applied"
 
     def action_set_text_color(self, color="#000000", apply_to="all",
                                find_text=None, selected_texts=None, **kwargs):
-        rgb          = hex_to_rgb(color)
+        rgb = hex_to_rgb(color)
         heading_set  = set(id(p) for p in self._find_heading_paragraphs())
         target_paras = (self._find_paragraphs_by_texts(selected_texts)
-                        if selected_texts
-                        else list(self._iter_all_paragraphs()))
+                        if selected_texts else list(self._iter_all_paragraphs()))
         count = 0
         for para in target_paras:
             is_heading = id(para) in heading_set
@@ -402,6 +396,135 @@ class DocumentExecutor:
                 rPr.append(el)
         return f"Character spacing set to {spacing}pt"
 
+    def action_set_text_case(self, case="upper", apply_to="all", find_text=None, **kwargs):
+        """
+        Change text case: upper | lower | title | sentence
+        Works on whole document, headings, body, or specific text.
+        """
+        heading_set = set(id(p) for p in self._find_heading_paragraphs())
+        count = 0
+        for para in self._iter_all_paragraphs():
+            is_heading = id(para) in heading_set
+            if apply_to == "headings" and not is_heading: continue
+            if apply_to == "body"     and is_heading:     continue
+            if find_text and find_text.lower() not in para.text.lower(): continue
+            for run in para.runs:
+                if not run.text: continue
+                if case == "upper":    run.text = run.text.upper()
+                elif case == "lower":  run.text = run.text.lower()
+                elif case == "title":  run.text = run.text.title()
+                elif case == "sentence":
+                    t = run.text
+                    run.text = t[0].upper() + t[1:].lower() if t else t
+            count += 1
+        return f"Text case changed to '{case}' for {count} paragraphs"
+
+    def action_copy_formatting(self, source_text="", target_text="", **kwargs):
+        """
+        Format Painter equivalent — copy formatting from source paragraph
+        to all paragraphs matching target text.
+        """
+        source_para = None
+        for para in self._iter_all_paragraphs():
+            if source_text.lower() in para.text.lower():
+                source_para = para; break
+        if not source_para:
+            return f"Source text '{source_text}' not found"
+        if not source_para.runs:
+            return f"Source paragraph has no runs to copy formatting from"
+
+        # Get formatting from first run of source
+        src_run = source_para.runs[0]
+        count = 0
+        for para in self._iter_all_paragraphs():
+            if target_text.lower() in para.text.lower() and para != source_para:
+                para.alignment = source_para.alignment
+                para.paragraph_format.space_before = source_para.paragraph_format.space_before
+                para.paragraph_format.space_after  = source_para.paragraph_format.space_after
+                para.paragraph_format.line_spacing  = source_para.paragraph_format.line_spacing
+                for run in para.runs:
+                    if src_run.font.name:    run.font.name  = src_run.font.name
+                    if src_run.font.size:    run.font.size  = src_run.font.size
+                    run.font.bold      = src_run.font.bold
+                    run.font.italic    = src_run.font.italic
+                    run.font.underline = src_run.font.underline
+                    if src_run.font.color.type:
+                        try: run.font.color.rgb = src_run.font.color.rgb
+                        except: pass
+                count += 1
+        return f"Formatting copied from '{source_text}' to {count} paragraphs"
+
+    def action_set_paragraph_shading(self, color="#F0FDF4", apply_to="all",
+                                      find_text=None, selected_texts=None, **kwargs):
+        """
+        Apply background color to entire paragraph (paragraph-level shading).
+        Different from character highlight — this colors the whole paragraph box.
+        """
+        heading_set  = set(id(p) for p in self._find_heading_paragraphs())
+        target_paras = (self._find_paragraphs_by_texts(selected_texts)
+                        if selected_texts else list(self._iter_all_paragraphs()))
+        count = 0
+        for para in target_paras:
+            is_heading = id(para) in heading_set
+            if apply_to == "headings" and not is_heading: continue
+            if apply_to == "body"     and is_heading:     continue
+            if find_text and find_text.lower() not in para.text.lower(): continue
+            pPr = para._p.get_or_add_pPr()
+            for existing in list(pPr.findall(qn('w:shd'))): pPr.remove(existing)
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:val'),  'clear')
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:fill'), color.lstrip('#'))
+            pPr.append(shd)
+            count += 1
+        return f"Paragraph shading set to {color} for {count} paragraphs"
+
+    def action_set_paragraph_border(self, style="single", color="#000000",
+                                     sides="all", find_text=None, **kwargs):
+        """Add a border box around paragraphs (top/bottom/left/right or all)."""
+        target_paras = list(self._iter_all_paragraphs())
+        if find_text:
+            target_paras = [p for p in target_paras if find_text.lower() in p.text.lower()]
+        count = 0
+        side_list = ['top','left','bottom','right'] if sides == "all" else [sides]
+        for para in target_paras:
+            pPr  = para._p.get_or_add_pPr()
+            pBdr = pPr.find(qn('w:pBdr'))
+            if pBdr is None:
+                pBdr = OxmlElement('w:pBdr'); pPr.append(pBdr)
+            for side in side_list:
+                b = OxmlElement(f'w:{side}')
+                b.set(qn('w:val'),   style)
+                b.set(qn('w:sz'),    '4')
+                b.set(qn('w:space'), '4')
+                b.set(qn('w:color'), color.lstrip('#'))
+                pBdr.append(b)
+            count += 1
+        return f"Paragraph border ({style}) added to {count} paragraphs"
+
+    def action_set_keep_with_next(self, apply_to="headings", **kwargs):
+        """Keep paragraph on same page as the next paragraph (pagination control)."""
+        heading_set = set(id(p) for p in self._find_heading_paragraphs())
+        count = 0
+        for para in self.doc.paragraphs:
+            is_heading = id(para) in heading_set
+            if apply_to == "headings" and not is_heading: continue
+            pPr = para._p.get_or_add_pPr()
+            kwn = OxmlElement('w:keepNext')
+            kwn.set(qn('w:val'), '1')
+            pPr.append(kwn)
+            count += 1
+        return f"Keep with next applied to {count} paragraphs"
+
+    def action_set_widow_orphan_control(self, enabled=True, **kwargs):
+        """Enable/disable widow and orphan line control."""
+        for para in self.doc.paragraphs:
+            pPr = para._p.get_or_add_pPr()
+            wo  = OxmlElement('w:widowControl')
+            wo.set(qn('w:val'), '1' if enabled else '0')
+            pPr.append(wo)
+        return f"Widow/orphan control {'enabled' if enabled else 'disabled'}"
+
     def action_set_drop_cap(self, paragraph_index=0, lines=3, font_name=None, **kwargs):
         paras = [p for p in self.doc.paragraphs if p.text.strip()]
         if paragraph_index >= len(paras): return f"Paragraph {paragraph_index} not found"
@@ -421,6 +544,90 @@ class DocumentExecutor:
         return f"Drop cap '{first_char}' applied ({lines} lines)"
 
     # ─────────────────────────────────────────
+    # TRACK CHANGES
+    # ─────────────────────────────────────────
+
+    def action_enable_track_changes(self, **kwargs):
+        """Enable track changes mode in the document."""
+        settings = self.doc.settings.element
+        tc = OxmlElement('w:trackChanges')
+        tc.set(qn('w:val'), '1')
+        settings.append(tc)
+        return "Track changes enabled (changes will be marked when editing in Word)"
+
+    def action_disable_track_changes(self, **kwargs):
+        settings = self.doc.settings.element
+        for el in settings.findall(qn('w:trackChanges')):
+            settings.remove(el)
+        return "Track changes disabled"
+
+    def action_accept_all_changes(self, **kwargs):
+        """Accept all tracked changes by removing markup and keeping inserted text."""
+        body = self.doc.element.body
+        # Accept insertions: remove w:ins wrapper, keep content
+        for ins in body.findall(f'.//{qn("w:ins")}'):
+            parent = ins.getparent()
+            idx    = list(parent).index(ins)
+            for child in list(ins):
+                parent.insert(idx, child); idx += 1
+            parent.remove(ins)
+        # Reject deletions: remove w:del and its content
+        for del_el in body.findall(f'.//{qn("w:del")}'):
+            del_el.getparent().remove(del_el)
+        return "All tracked changes accepted"
+
+    def action_reject_all_changes(self, **kwargs):
+        """Reject all tracked changes: remove insertions, keep deleted text."""
+        body = self.doc.element.body
+        # Remove insertions
+        for ins in body.findall(f'.//{qn("w:ins")}'):
+            ins.getparent().remove(ins)
+        # Accept deletions: remove w:del wrapper, keep content
+        for del_el in body.findall(f'.//{qn("w:del")}'):
+            parent = del_el.getparent()
+            idx    = list(parent).index(del_el)
+            for child in list(del_el):
+                parent.insert(idx, child); idx += 1
+            parent.remove(del_el)
+        return "All tracked changes rejected"
+
+    # ─────────────────────────────────────────
+    # CHECKLISTS
+    # ─────────────────────────────────────────
+
+    def action_add_checklist(self, items=None, **kwargs):
+        """
+        Add a checklist with checkbox characters.
+        Uses Unicode checkboxes: ☐ (empty) and ☑ (checked).
+        """
+        if not items: return "No items provided"
+        for item in items:
+            checked = item.get("checked", False) if isinstance(item, dict) else False
+            text    = item.get("text", item)     if isinstance(item, dict) else item
+            checkbox = "☑ " if checked else "☐ "
+            para = self.doc.add_paragraph()
+            run  = para.add_run(checkbox + text)
+            pPr  = para._p.get_or_add_pPr()
+            ind  = OxmlElement('w:ind')
+            ind.set(qn('w:left'), '360')
+            pPr.append(ind)
+        return f"Checklist added with {len(items)} items"
+
+    def action_convert_to_checklist(self, **kwargs):
+        """Convert bullet list or lines starting with - [ ] to checklist items."""
+        count = 0
+        for para in self.doc.paragraphs:
+            t = para.text.strip()
+            if re.match(r'^[-*]\s*\[[ xX]\]\s*', t) or re.match(r'^[-*]\s+', t):
+                checked = bool(re.match(r'^[-*]\s*\[[xX]\]', t))
+                clean   = re.sub(r'^[-*]\s*\[[ xX]\]\s*', '', t)
+                clean   = re.sub(r'^[-*]\s+', '', clean)
+                checkbox = "☑ " if checked else "☐ "
+                para.text = checkbox + clean
+                count += 1
+        return f"Converted {count} items to checklist"
+
+    # ─────────────────────────────────────────
     # SELECTION-BASED COMMANDS
     # ─────────────────────────────────────────
 
@@ -428,11 +635,9 @@ class DocumentExecutor:
                                    font_name=None, font_size=None, color=None,
                                    highlight_color=None, alignment=None,
                                    make_heading=None, **kwargs):
-        if not selected_texts:
-            return "No selected text provided"
+        if not selected_texts: return "No selected text provided"
         target_paras = self._find_paragraphs_by_texts(selected_texts)
-        if not target_paras:
-            return f"Could not find selected text in document."
+        if not target_paras: return "Could not find selected text in document."
         count = 0
         for para in target_paras:
             if command_type == "bold":
@@ -450,21 +655,17 @@ class DocumentExecutor:
             elif command_type == "remove_formatting":
                 for run in para.runs:
                     run.font.bold = run.font.italic = run.font.underline = False
-                    run.font.strike = False
-                    run.font.color.rgb = RGBColor(0, 0, 0)
+                    run.font.strike = False; run.font.color.rgb = RGBColor(0,0,0)
                     _remove_highlight_run(run)
             elif command_type == "highlight":
                 hc = highlight_color or "yellow"
                 for run in para.runs:
-                    if run.text.strip():
-                        _highlight_run(run, hc)
+                    if run.text.strip(): _highlight_run(run, hc)
             elif command_type == "remove_highlight":
-                for run in para.runs:
-                    _remove_highlight_run(run)
+                for run in para.runs: _remove_highlight_run(run)
             elif command_type == "heading":
                 level = make_heading or 1
-                try:
-                    para.style = self.doc.styles[f"Heading {level}"]
+                try:    para.style = self.doc.styles[f"Heading {level}"]
                 except KeyError:
                     for run in para.runs:
                         run.bold = True
@@ -486,8 +687,7 @@ class DocumentExecutor:
                 for run in para.runs: run.text = run.text.title()
             count += 1
         preview = ', '.join(f'"{t[:30]}"' for t in selected_texts[:2])
-        return (f"Applied '{command_type}' to {count} paragraph(s): {preview}"
-                f"{'...' if len(selected_texts) > 2 else ''}")
+        return f"Applied '{command_type}' to {count} paragraph(s): {preview}"
 
     # ─────────────────────────────────────────
     # TEXT OPERATIONS
@@ -522,6 +722,23 @@ class DocumentExecutor:
     def action_count_paragraphs(self, **kwargs):
         count = sum(1 for p in self.doc.paragraphs if p.text.strip())
         return f"Document has {count} paragraphs"
+
+    def action_extract_text(self, **kwargs):
+        """Extract all text from document as plain text."""
+        lines = [p.text for p in self._iter_all_paragraphs() if p.text.strip()]
+        return "\n".join(lines)
+
+    def action_set_language(self, language="en-US", apply_to="all", **kwargs):
+        """Set proofing language for spell check (e.g. en-US, en-GB, hi-IN)."""
+        count = 0
+        for para in self._iter_all_paragraphs():
+            for run in para.runs:
+                rPr  = run._r.get_or_add_rPr()
+                lang = OxmlElement('w:lang')
+                lang.set(qn('w:val'), language)
+                rPr.append(lang)
+            count += 1
+        return f"Language set to {language} for {count} paragraphs"
 
     # ─────────────────────────────────────────
     # LISTS AND NUMBERING
@@ -601,7 +818,8 @@ class DocumentExecutor:
         return "Blank page added"
 
     def action_set_page_size(self, size="A4", **kwargs):
-        sizes = {"A4": (210, 297), "Letter": (215.9, 279.4), "A3": (297, 420)}
+        sizes = {"A4": (210, 297), "Letter": (215.9, 279.4), "A3": (297, 420),
+                 "A5": (148, 210), "Legal": (215.9, 355.6)}
         w, h = sizes.get(size, (210, 297))
         for section in self.doc.sections:
             section.page_width = Mm(w); section.page_height = Mm(h)
@@ -633,9 +851,16 @@ class DocumentExecutor:
 
     def action_remove_line_numbers(self, **kwargs):
         for section in self.doc.sections:
-            for ln in section._sectPr.findall(qn('w:lnNumType')):
-                section._sectPr.remove(ln)
+            for ln in section._sectPr.findall(qn('w:lnNumType')): section._sectPr.remove(ln)
         return "Line numbers removed"
+
+    def action_set_page_number_start(self, start=1, **kwargs):
+        """Set the page number that the document starts counting from."""
+        for section in self.doc.sections:
+            pgNumType = OxmlElement('w:pgNumType')
+            pgNumType.set(qn('w:start'), str(start))
+            section._sectPr.append(pgNumType)
+        return f"Page numbering starts at {start}"
 
     # ─────────────────────────────────────────
     # HEADERS AND FOOTERS
@@ -709,7 +934,21 @@ class DocumentExecutor:
         para.clear(); para.add_run(text); para.alignment = get_alignment(alignment)
         return f"Section {section_index} footer: '{text}'"
 
-    def action_insert_date_field(self, position="end", format="DD/MM/YYYY", **kwargs):
+    def action_mirror_heading_in_header(self, **kwargs):
+        """Set running headers from Heading 1 text (chapter-based running headers)."""
+        for i, section in enumerate(self.doc.sections):
+            h1_text = ""
+            for para in self.doc.paragraphs:
+                if para.style.name == "Heading 1":
+                    h1_text = para.text.strip(); break
+            if h1_text:
+                header = section.header
+                para   = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+                para.clear(); para.add_run(h1_text)
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        return "Running header set from Heading 1 text"
+
+    def action_insert_date_field(self, position="end", **kwargs):
         para = self.doc.add_paragraph(); run = para.add_run()
         for ft, txt in [('begin',None),(None,' DATE \\@ "DD/MM/YYYY" \\* MERGEFORMAT '),('end',None)]:
             if ft: e = OxmlElement('w:fldChar'); e.set(qn('w:fldCharType'),ft); run._r.append(e)
@@ -801,8 +1040,7 @@ class DocumentExecutor:
                 shd.set(qn('w:fill'), color.lstrip('#'))
                 cell._tc.get_or_add_tcPr().append(shd)
                 for para in cell.paragraphs:
-                    for run in para.runs:
-                        run.font.color.rgb = RGBColor(255,255,255); run.font.bold = True
+                    for run in para.runs: run.font.color.rgb = RGBColor(255,255,255); run.font.bold = True
             return f"Table header colored {color}"
         except IndexError: return "Table not found"
 
@@ -816,8 +1054,7 @@ class DocumentExecutor:
                 b = OxmlElement(f'w:{name}')
                 b.set(qn('w:val'),'single'); b.set(qn('w:sz'),str(border_size))
                 b.set(qn('w:color'), border_color.lstrip('#')); tblB.append(b)
-            tblPr.append(tblB)
-            return "Table borders set"
+            tblPr.append(tblB); return "Table borders set"
         except Exception as e: return f"Border error: {e}"
 
     def action_merge_table_cells(self, table_index=0, start_row=0, start_col=0,
@@ -868,13 +1105,37 @@ class DocumentExecutor:
             table     = self.doc.tables[table_index]
             if len(table.rows) < 2: return "Table has no data rows to sort"
             data_rows = list(table.rows[1:])
-            data_rows.sort(
-                key=lambda r: r.cells[col].text.strip().lower(),
-                reverse=not ascending)
-            for row in data_rows:
-                table._tbl.append(row._tr)
+            data_rows.sort(key=lambda r: r.cells[col].text.strip().lower(), reverse=not ascending)
+            for row in data_rows: table._tbl.append(row._tr)
             return f"Table sorted by column {col}"
         except Exception as e: return f"Sort error: {e}"
+
+    def action_set_table_cell_alignment(self, table_index=0, row=0, col=0,
+                                         alignment="center", **kwargs):
+        """Set text alignment within a specific table cell."""
+        try:
+            cell = self.doc.tables[table_index].rows[row].cells[col]
+            for para in cell.paragraphs:
+                para.alignment = get_alignment(alignment)
+            return f"Cell ({row},{col}) alignment set to {alignment}"
+        except IndexError: return "Cell not found"
+
+    def action_set_table_row_height(self, table_index=0, row_index=0, height_inches=0.5, **kwargs):
+        """Set height of a specific table row."""
+        try:
+            row = self.doc.tables[table_index].rows[row_index]
+            row.height = Inches(height_inches)
+            return f"Row {row_index} height set to {height_inches}in"
+        except Exception as e: return f"Row height error: {e}"
+
+    def action_insert_table_of_authorities(self, title="Table of Authorities", **kwargs):
+        """Insert a Table of Authorities (for legal documents)."""
+        h = self.doc.add_paragraph(title); h.style = "Heading 1"
+        p = self.doc.add_paragraph(""); run = p.add_run()
+        for ft, txt in [('begin',None),(None,'TOA \\h \\c "1" \\p'),('end',None)]:
+            if ft: e = OxmlElement('w:fldChar'); e.set(qn('w:fldCharType'),ft); run._r.append(e)
+            else:  e = OxmlElement('w:instrText'); e.text=txt; run._r.append(e)
+        return "Table of Authorities inserted (update with F9 in Word)"
 
     # ─────────────────────────────────────────
     # REFERENCES AND NAVIGATION
@@ -1070,8 +1331,8 @@ class DocumentExecutor:
             pPr  = para._p.get_or_add_pPr()
             pBdr = OxmlElement('w:pBdr')
             top  = OxmlElement('w:top')
-            top.set(qn('w:val'),   'single'); top.set(qn('w:sz'),    '6')
-            top.set(qn('w:space'), '1');      top.set(qn('w:color'), color.lstrip('#'))
+            top.set(qn('w:val'),'single'); top.set(qn('w:sz'),'6')
+            top.set(qn('w:space'),'1');    top.set(qn('w:color'),color.lstrip('#'))
             pBdr.append(top); pPr.append(pBdr); count += 1
         return f"Horizontal line added before {count} headings"
 
@@ -1087,14 +1348,87 @@ class DocumentExecutor:
             if find_text and find_text in para.text: target = para; break
         if not target: return f"Text '{find_text}' not found"
         try:
-            self.doc.add_comment(
-                runs=target.runs[0] if target.runs else None,
-                text=comment_text, author=author)
+            self.doc.add_comment(runs=target.runs[0] if target.runs else None,
+                                  text=comment_text, author=author)
             return f"Comment added: '{comment_text}'"
         except AttributeError:
             run = target.add_run(f" [{author}: {comment_text}]")
             run.font.color.rgb = RGBColor(217,119,6); run.font.size = Pt(9); run.italic = True
             return f"Comment added inline: '{comment_text}'"
+
+    def action_insert_smartart(self, type="process", items=None, title="", **kwargs):
+        """
+        SmartArt is not natively supported by python-docx.
+        We create a styled table that visually represents the SmartArt concept.
+        type: process | hierarchy | list | cycle | relationship
+        """
+        if not items: items = ["Item 1", "Item 2", "Item 3"]
+
+        if type == "hierarchy":
+            # Org chart style
+            table = self.doc.add_table(rows=len(items), cols=1)
+            table.style = "Table Grid"
+            for i, item in enumerate(items):
+                cell = table.rows[i].cells[0]
+                cell.text = item
+                shd = OxmlElement('w:shd')
+                shd.set(qn('w:val'),'clear'); shd.set(qn('w:color'),'auto')
+                fill = "10B981" if i == 0 else "D1FAE5"
+                shd.set(qn('w:fill'), fill)
+                cell._tc.get_or_add_tcPr().append(shd)
+                for para in cell.paragraphs:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in para.runs:
+                        run.bold = i == 0
+                        run.font.color.rgb = RGBColor(255,255,255) if i == 0 else RGBColor(6,78,59)
+        else:
+            # Process / list style
+            table = self.doc.add_table(rows=1, cols=len(items))
+            table.style = "Table Grid"
+            colors = ["10B981", "059669", "047857", "064E3B", "065F46"]
+            for i, item in enumerate(items[:len(colors)]):
+                cell = table.rows[0].cells[i]
+                cell.text = item
+                shd = OxmlElement('w:shd')
+                shd.set(qn('w:val'),'clear'); shd.set(qn('w:color'),'auto')
+                shd.set(qn('w:fill'), colors[i % len(colors)])
+                cell._tc.get_or_add_tcPr().append(shd)
+                for para in cell.paragraphs:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in para.runs:
+                        run.bold = True
+                        run.font.color.rgb = RGBColor(255,255,255)
+
+        if title:
+            cap = self.doc.add_paragraph(title)
+            cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in cap.runs: run.italic = True; run.font.size = Pt(10)
+        return f"SmartArt ({type}) created with {len(items)} items"
+
+    def action_insert_shape_text(self, shape_type="rectangle", text="",
+                                  width_inches=2.0, color="#10B981", **kwargs):
+        """
+        Insert a styled text box representing a shape.
+        shape_type: rectangle | rounded | circle | banner
+        """
+        table = self.doc.add_table(rows=1, cols=1)
+        table.style = "Table Grid"
+        cell = table.rows[0].cells[0]
+        cell.text = text
+        cell.width = Inches(width_inches)
+        tc   = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        shd  = OxmlElement('w:shd')
+        shd.set(qn('w:val'),  'clear')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:fill'), color.lstrip('#'))
+        tcPr.append(shd)
+        for para in cell.paragraphs:
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in para.runs:
+                run.bold = True
+                run.font.color.rgb = RGBColor(255, 255, 255)
+        return f"{shape_type.title()} shape with text '{text}' inserted"
 
     # ─────────────────────────────────────────
     # CITATIONS AND MAIL MERGE
@@ -1173,8 +1507,7 @@ class DocumentExecutor:
 
     def action_remove_page_border(self, **kwargs):
         for section in self.doc.sections:
-            for pgB in section._sectPr.findall(qn('w:pgBorders')):
-                section._sectPr.remove(pgB)
+            for pgB in section._sectPr.findall(qn('w:pgBorders')): section._sectPr.remove(pgB)
         return "Page borders removed"
 
     # ─────────────────────────────────────────
@@ -1204,6 +1537,42 @@ class DocumentExecutor:
                 para.style = style; count += 1
         return f"Style '{style_name}' applied to {count} paragraphs"
 
+    def action_apply_style_set(self, style_set="formal", **kwargs):
+        """
+        Apply a predefined style set similar to Word's built-in style sets.
+        style_set: formal | casual | professional | elegant | minimalist
+        """
+        sets = {
+            "formal": {
+                "font": "Times New Roman", "size": 12, "heading_color": "#1a1a1a",
+                "line_spacing": 2.0, "alignment": "justify"
+            },
+            "casual": {
+                "font": "Calibri", "size": 11, "heading_color": "#2563EB",
+                "line_spacing": 1.5, "alignment": "left"
+            },
+            "professional": {
+                "font": "Calibri", "size": 11, "heading_color": "#1F4E3D",
+                "line_spacing": 1.15, "alignment": "left"
+            },
+            "elegant": {
+                "font": "Garamond", "size": 12, "heading_color": "#7C3AED",
+                "line_spacing": 1.5, "alignment": "justify"
+            },
+            "minimalist": {
+                "font": "Arial", "size": 11, "heading_color": "#374151",
+                "line_spacing": 1.5, "alignment": "left"
+            },
+        }
+        s = sets.get(style_set.lower(), sets["professional"])
+        self.action_set_font(font_name=s["font"], size=s["size"], apply_to="body")
+        self.action_set_alignment(alignment=s["alignment"], apply_to="body")
+        self.action_set_paragraph_spacing(before=0, after=8, line_spacing=s["line_spacing"], apply_to="body")
+        self.action_set_heading_style(level=1, bold=True, color=s["heading_color"], font_size=s["size"]+6)
+        self.action_set_heading_style(level=2, bold=True, color=s["heading_color"], font_size=s["size"]+3)
+        self.action_set_heading_style(level=3, bold=True, color=s["heading_color"], font_size=s["size"]+1)
+        return f"Style set '{style_set}' applied: {s['font']} {s['size']}pt, {s['alignment']} aligned"
+
     def action_set_document_properties(self, title=None, author=None,
                                         subject=None, keywords=None,
                                         comments=None, **kwargs):
@@ -1230,11 +1599,31 @@ class DocumentExecutor:
             except (ValueError, IndexError): continue
         return f"Heading numbering applied ({style})"
 
+    def action_remove_heading_numbers(self, **kwargs):
+        """Strip leading numbers from heading paragraphs."""
+        count = 0
+        headings = self._find_heading_paragraphs()
+        for para in headings:
+            if para.runs:
+                clean = re.sub(r'^[\d\.\s]+', '', para.runs[0].text).strip()
+                if clean != para.runs[0].text:
+                    para.runs[0].text = clean; count += 1
+        return f"Heading numbers removed from {count} paragraphs"
+
+    def action_lock_section(self, section_index=0, **kwargs):
+        """Lock a specific section from editing."""
+        settings = self.doc.settings.element
+        dp = OxmlElement('w:documentProtection')
+        dp.set(qn('w:edit'), 'readOnly')
+        settings.append(dp)
+        return f"Section {section_index} locked (document-level protection applied)"
+
     # ─────────────────────────────────────────
     # ACADEMIC AND PROFESSIONAL FORMATS
     # ─────────────────────────────────────────
 
     def action_apply_sppu_format(self, **kwargs):
+        """SPPU BE/ME Project Report: TNR 12pt body, 15pt H1 centred, 1.5 spacing, L=1.5in, A4"""
         self.action_set_page_size(size="A4")
         self.action_set_font(font_name="Times New Roman", size=12, apply_to="all")
         self.action_set_alignment(alignment="justify", apply_to="body")
@@ -1246,9 +1635,10 @@ class DocumentExecutor:
             if para.style.name == "Heading 1": para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         self.action_set_heading_style(level=2, bold=True, color="#000000", font_size=12)
         self.action_set_heading_style(level=3, bold=True, color="#000000", font_size=12)
-        return "SPPU format applied: Times New Roman 12pt body, 15pt chapter headings centred, 1.5 spacing, justified, L=1.5in R=1.0in T=1.0in B=1.0in, 1cm indent, A4"
+        return "SPPU format applied: TNR 12pt, 15pt H1 centred, 1.5 spacing, justified, L=1.5in R=1.0in T=1.0in B=1.0in, 1cm indent, A4"
 
     def action_apply_ieee_format(self, **kwargs):
+        """IEEE Conference: TNR 10pt, 2-col 0.17in gap, T=0.75 B=1.69 L=R=0.56in, A4"""
         self.action_set_page_size(size="A4")
         self.action_set_font(font_name="Times New Roman", size=10, apply_to="all")
         self.action_set_alignment(alignment="justify", apply_to="all")
@@ -1260,9 +1650,10 @@ class DocumentExecutor:
         self.action_set_heading_style(level=2, bold=True, color="#000000", font_size=10)
         for para in self.doc.paragraphs:
             if para.style.name == "Heading 1": para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        return "IEEE format applied: Times New Roman 10pt, 2-column (0.17in gap), justified, T=0.75in B=1.69in L=0.56in R=0.56in, single spacing, A4"
+        return "IEEE format applied: TNR 10pt, 2-col 0.17in gap, T=0.75 B=1.69 L=R=0.56in, A4"
 
     def action_apply_apa_format(self, **kwargs):
+        """APA 7th: TNR 12pt, double spacing, left aligned, 1in margins, 0.5in indent, Letter"""
         self.action_set_page_size(size="Letter")
         self.action_set_font(font_name="Times New Roman", size=12, apply_to="all")
         self.action_set_alignment(alignment="left", apply_to="body")
@@ -1271,9 +1662,10 @@ class DocumentExecutor:
         self.action_set_indent(left=0.0, right=0.0, first_line=0.5, apply_to="body")
         self.action_set_heading_style(level=1, bold=True, color="#000000", font_size=12)
         self.action_set_heading_style(level=2, bold=True, color="#000000", font_size=12)
-        return "APA 7th edition: Times New Roman 12pt, double spacing, left aligned, 1in margins, 0.5in first line indent, Letter"
+        return "APA 7th: TNR 12pt, double spacing, left, 1in margins, 0.5in indent, Letter"
 
     def action_apply_mla_format(self, **kwargs):
+        """MLA 9th: TNR 12pt, double spacing, left aligned, 1in margins, 0.5in indent, Letter"""
         self.action_set_page_size(size="Letter")
         self.action_set_font(font_name="Times New Roman", size=12, apply_to="all")
         self.action_set_alignment(alignment="left", apply_to="body")
@@ -1281,9 +1673,10 @@ class DocumentExecutor:
         self.action_set_paragraph_spacing(before=0, after=0, line_spacing=2.0, apply_to="body")
         self.action_set_indent(left=0.0, right=0.0, first_line=0.5, apply_to="body")
         self.action_set_heading_style(level=1, bold=False, color="#000000", font_size=12)
-        return "MLA 9th edition: Times New Roman 12pt, double spacing, left aligned, 1in margins, 0.5in first line indent, Letter"
+        return "MLA 9th: TNR 12pt, double spacing, left, 1in margins, 0.5in indent, Letter"
 
     def action_apply_resume_format(self, **kwargs):
+        """Resume: Calibri 11pt, 1.15 spacing, 0.75in margins, dark green headings, Letter"""
         self.action_set_page_size(size="Letter")
         self.action_set_margins(top=0.75, bottom=0.75, left=0.75, right=0.75)
         self.action_set_font(font_name="Calibri", size=11, apply_to="all")
@@ -1292,18 +1685,20 @@ class DocumentExecutor:
         self.action_set_heading_style(level=1, bold=True, color="#1F4E3D", font_size=18)
         self.action_set_heading_style(level=2, bold=True, color="#10B981", font_size=13)
         self.action_set_heading_style(level=3, bold=True, color="#064E3B", font_size=11)
-        return "Resume format: Calibri 11pt, 1.15 spacing, 0.75in margins, dark green headings, Letter"
+        return "Resume: Calibri 11pt, 1.15 spacing, 0.75in margins, dark green headings, Letter"
 
     def action_apply_chicago_format(self, **kwargs):
+        """Chicago 17th: TNR 12pt, double spacing, 1in margins, 0.5in indent, Letter"""
         self.action_set_page_size(size="Letter")
         self.action_set_font(font_name="Times New Roman", size=12, apply_to="all")
         self.action_set_alignment(alignment="left", apply_to="body")
         self.action_set_margins(top=1.0, bottom=1.0, left=1.0, right=1.0)
         self.action_set_paragraph_spacing(before=0, after=0, line_spacing=2.0, apply_to="body")
         self.action_set_indent(left=0.0, right=0.0, first_line=0.5, apply_to="body")
-        return "Chicago 17th edition: Times New Roman 12pt, double spacing, 1in margins, 0.5in indent, Letter"
+        return "Chicago 17th: TNR 12pt, double spacing, 1in margins, 0.5in indent, Letter"
 
     def action_apply_thesis_format(self, **kwargs):
+        """Thesis: TNR 12pt, 1.5 spacing, justified, 1.5in left (binding), A4"""
         self.action_set_page_size(size="A4")
         self.action_set_font(font_name="Times New Roman", size=12, apply_to="all")
         self.action_set_alignment(alignment="justify", apply_to="body")
@@ -1313,7 +1708,7 @@ class DocumentExecutor:
         self.action_set_heading_style(level=1, bold=True, color="#000000", font_size=14)
         self.action_set_heading_style(level=2, bold=True, color="#000000", font_size=13)
         self.action_set_heading_style(level=3, bold=True, color="#000000", font_size=12)
-        return "Thesis format: Times New Roman 12pt, 1.5 spacing, justified, 1.5in left margin (binding), A4"
+        return "Thesis: TNR 12pt, 1.5 spacing, justified, 1.5in left margin (binding), A4"
 
     # ─────────────────────────────────────────
     # PROTECTION AND CONVERSION
@@ -1332,14 +1727,12 @@ class DocumentExecutor:
 
     def action_remove_password_protection(self, **kwargs):
         settings = self.doc.settings.element
-        for dp in settings.findall(qn('w:documentProtection')):
-            settings.remove(dp)
+        for dp in settings.findall(qn('w:documentProtection')): settings.remove(dp)
         return "Document protection removed"
 
     def action_convert_to_pdf(self, output_path=None, **kwargs):
         try:
-            if output_path is None:
-                output_path = self.file_path.replace('.docx', '.pdf')
+            if output_path is None: output_path = self.file_path.replace('.docx', '.pdf')
             try:
                 from docx2pdf import convert
                 convert(self.file_path, output_path)
@@ -1392,3 +1785,22 @@ class DocumentExecutor:
                 if pf.space_before and pf.space_before > Pt(24): pf.space_before = Pt(12)
                 if pf.space_after  and pf.space_after  > Pt(24): pf.space_after  = Pt(8)
         return "Spacing normalized throughout document"
+
+    def action_replace_font(self, old_font="", new_font="", **kwargs):
+        count = 0
+        for para in self._iter_all_paragraphs():
+            for run in para.runs:
+                if run.font.name and run.font.name.lower() == old_font.lower():
+                    run.font.name = new_font; count += 1
+        return f"Replaced font '{old_font}' with '{new_font}' in {count} runs"
+
+    def action_extract_text(self, **kwargs):
+        lines = [p.text for p in self._iter_all_paragraphs() if p.text.strip()]
+        return "\n".join(lines)
+
+    def action_count_words(self, **kwargs):
+        total = sum(len(p.text.split()) for p in self._iter_all_paragraphs() if p.text.strip())
+        return f"Document has {total} words"
+
+    def action_count_paragraphs(self, **kwargs):
+        return f"Document has {sum(1 for p in self.doc.paragraphs if p.text.strip())} paragraphs"
