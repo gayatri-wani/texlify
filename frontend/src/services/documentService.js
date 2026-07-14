@@ -1,6 +1,7 @@
 import api from '../utils/api'
 
 export const documentService = {
+
   upload: async (file) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -10,8 +11,30 @@ export const documentService = {
     return response.data
   },
 
+  uploadImage: async (file, onProgress) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/documents/upload-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress) {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          )
+          onProgress(percent)
+        }
+      },
+    })
+    return response.data
+  },
+
   getAll: async () => {
     const response = await api.get('/documents')
+    return response.data
+  },
+
+  rename: async (id, title) => {
+    const response = await api.patch(`/documents/${id}/rename`, { title })
     return response.data
   },
 
@@ -21,7 +44,8 @@ export const documentService = {
   },
 
   sendCommand: async (documentId, command) => {
-    const response = await api.post(`/documents/${documentId}/command`, { command })
+    const response = await api.post(
+      `/documents/${documentId}/command`, { command })
     return response.data
   },
 
@@ -35,6 +59,18 @@ export const documentService = {
     const response = await api.get(`/documents/${documentId}/preview`, {
       responseType: 'text',
       headers: { 'Accept': 'text/html' }
+    })
+    return response.data
+  },
+
+  getBackups: async (documentId) => {
+    const response = await api.get(`/documents/${documentId}/backups`)
+    return response.data
+  },
+
+  undo: async (documentId, backupFilename) => {
+    const response = await api.post(`/documents/${documentId}/undo`, {
+      backup_filename: backupFilename
     })
     return response.data
   },
