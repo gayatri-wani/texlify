@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import Login from './pages/auth/Login'
+import useAuthStore from './store/authStore'
+import Login    from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import Dashboard from './pages/dashboard/Dashboard'
-import useAuthStore from './store/authStore'
+import Profile   from './pages/profile/Profile'
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore()
@@ -21,27 +22,42 @@ function App() {
       <Toaster
         position="top-right"
         toastOptions={{
+          duration: 3000,
           style: {
-            background: '#FFFFFF',
-            color: '#064E3B',
-            border: '1.5px solid #BBF7D0',
-            borderRadius: '10px',
-            fontSize: '14px',
-            fontWeight: '500',
-            boxShadow: '0 4px 16px rgba(16, 185, 129, 0.12)',
+            background: 'var(--bg-card)',
+            color:      'var(--text-dark)',
+            border:     '1.5px solid var(--border-light)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '13px',
+            fontFamily: 'var(--font-family)',
           },
-          success: { iconTheme: { primary: '#10B981', secondary: '#FFFFFF' } },
-          error:   { iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' } },
+          success: {
+            iconTheme: { primary: '#10B981', secondary: 'white' }
+          },
+          error: {
+            iconTheme: { primary: '#EF4444', secondary: 'white' }
+          },
         }}
       />
       <Routes>
-        <Route path="/"          element={<Navigate to="/login" replace />} />
-        <Route path="/login"     element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/register"  element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/documents" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/history"   element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/settings"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route
+          path="/login"
+          element={<PublicRoute><Login /></PublicRoute>}
+        />
+        <Route
+          path="/register"
+          element={<PublicRoute><Register /></PublicRoute>}
+        />
+        <Route
+          path="/dashboard"
+          element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
+        />
+        <Route
+          path="/profile"
+          element={<ProtectedRoute><Profile /></ProtectedRoute>}
+        />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )
