@@ -1,33 +1,57 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { RefreshCw, Download, ZoomIn, ZoomOut, FileText, MousePointer } from 'lucide-react'
+import {
+  RefreshCw, Download, ZoomIn, ZoomOut,
+  FileText, MousePointer, Hash
+} from 'lucide-react'
 import { documentService } from '../../services/documentService'
 import SelectionToolbar from './SelectionToolbar'
 import './DocumentPreview.css'
 
-const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionCommand }) => {
+const DocumentPreview = ({
+  document, refreshTrigger, onDownload, onSelectionCommand
+}) => {
   const [html, setHtml]                   = useState('')
   const [loading, setLoading]             = useState(false)
   const [zoom, setZoom]                   = useState(100)
   const [selectedTexts, setSelectedTexts] = useState([])
   const [toolbarPos, setToolbarPos]       = useState({ x: 0, y: 0 })
   const [showToolbar, setShowToolbar]     = useState(false)
-  const [selectionMode, setSelectionMode] = useState(false)
   const [cmdLoading, setCmdLoading]       = useState(false)
+  const [wordCount, setWordCount]         = useState(null)
+  const [scrollPos, setScrollPos]         = useState(0)
   const iframeRef                         = useRef()
   const containerRef                      = useRef()
+  const areaRef                           = useRef()
 
   const loadPreview = async () => {
     if (!document) return
+    // Save scroll position before refresh
+    if (areaRef.current) setScrollPos(areaRef.current.scrollTop)
     setLoading(true)
     try {
       const htmlContent = await documentService.getPreview(document.id)
       setHtml(htmlContent)
-    } catch (err) {
+      // Extract word count from HTML
+      const tempDiv = window.document.createElement('div')
+      tempDiv.innerHTML = htmlContent
+      const text  = tempDiv.textContent || tempDiv.innerText || ''
+      const words = text.trim().split(/\s+/).filter(w => w.length > 0).length
+      setWordCount(words)
+    } catch {
       setHtml('<div style="padding:40px;color:#666;font-family:sans-serif;">Preview failed. Download the document to see changes.</div>')
     } finally {
       setLoading(false)
     }
   }
+
+  // Restore scroll position after content loads
+  useEffect(() => {
+    if (!loading && areaRef.current && scrollPos > 0) {
+      setTimeout(() => {
+        if (areaRef.current) areaRef.current.scrollTop = scrollPos
+      }, 100)
+    }
+  }, [loading, html])
 
   useEffect(() => {
     loadPreview()
@@ -43,8 +67,6 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
       try {
         const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
         if (!iframeDoc) return
-
-        // Inject selection script into iframe
         const script = iframeDoc.createElement('script')
         script.textContent = `
           let selectedElements = [];
@@ -58,11 +80,9 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
           });
 
           document.addEventListener('click', (e) => {
-            const para = e.target.closest('p, h1, h2, h3, h4, h5, h6, li');
+            const para = e.target.closest('p, h1, h2, h3, h4, h5, h6, li, td, th');
             if (!para) return;
-
             if (ctrlHeld) {
-              // Multi-select with Ctrl
               if (para.classList.contains('texlify-selected')) {
                 para.classList.remove('texlify-selected');
                 selectedElements = selectedElements.filter(el => el !== para);
@@ -71,7 +91,6 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
                 selectedElements.push(para);
               }
             } else {
-              // Single select — clear previous
               document.querySelectorAll('.texlify-selected').forEach(el => {
                 el.classList.remove('texlify-selected');
               });
@@ -79,36 +98,32 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
               para.classList.add('texlify-selected');
               selectedElements = [para];
             }
-
-            const texts = selectedElements.map(el => el.textContent.trim()).filter(Boolean);
-            const rect  = para.getBoundingClientRect();
+            const texts = selectedElements
+              .map(el => el.textContent.trim())
+              .filter(Boolean);
+            const rect = para.getBoundingClientRect();
             window.parent.postMessage({
               type: 'texlify-selection',
-              texts: texts,
-              rect: {
-                top:    rect.top,
-                left:   rect.left,
-                bottom: rect.bottom,
-                right:  rect.right
-              }
+              texts,
+              rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right }
             }, '*');
           });
 
-          // Inject selection styles
           const style = document.createElement('style');
           style.textContent = \`
-            p, h1, h2, h3, h4, h5, h6, li {
+            p, h1, h2, h3, h4, h5, h6, li, td, th {
               cursor: pointer;
               border-radius: 3px;
               transition: background 0.1s;
             }
-            p:hover, h1:hover, h2:hover, h3:hover, h4:hover, h5:hover, h6:hover, li:hover {
-              background: rgba(16, 185, 129, 0.06) !important;
-              outline: 1px dashed rgba(16, 185, 129, 0.4);
+            p:hover, h1:hover, h2:hover, h3:hover, h4:hover,
+            h5:hover, h6:hover, li:hover, td:hover, th:hover {
+              background: rgba(16,185,129,0.06) !important;
+              outline: 1px dashed rgba(16,185,129,0.4);
             }
             .texlify-selected {
-              background: rgba(16, 185, 129, 0.15) !important;
-              outline: 2px solid rgba(16, 185, 129, 0.6) !important;
+              background: rgba(16,185,129,0.15) !important;
+              outline: 2px solid rgba(16,185,129,0.6) !important;
             }
           \`;
           document.head.appendChild(style);
@@ -128,35 +143,17 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
       if (e.data?.type !== 'texlify-selection') return
       const { texts, rect } = e.data
       if (!texts || texts.length === 0) {
-        setShowToolbar(false)
-        setSelectedTexts([])
-        return
+        setShowToolbar(false); setSelectedTexts([]); return
       }
       setSelectedTexts(texts)
-
-      // Position toolbar above selected element
-      const container    = containerRef.current
-      const containerRect = container?.getBoundingClientRect()
-      if (!containerRect) return
-
-      const iframe    = iframeRef.current
-      const iframeRect = iframe?.getBoundingClientRect()
+      const iframeRect = iframeRef.current?.getBoundingClientRect()
       if (!iframeRect) return
-
       const scale = zoom / 100
-      const x = Math.min(
-        iframeRect.left + rect.left * scale,
-        window.innerWidth - 340
-      )
-      const y = Math.max(
-        iframeRect.top + rect.top * scale - 10,
-        10
-      )
-
+      const x = Math.min(iframeRect.left + rect.left * scale, window.innerWidth - 360)
+      const y = Math.max(iframeRect.top  + rect.top  * scale - 10, 10)
       setToolbarPos({ x, y })
       setShowToolbar(true)
     }
-
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
   }, [zoom])
@@ -173,25 +170,23 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
     return () => window.document.removeEventListener('click', handleClickOutside)
   }, [])
 
- const handleSelectionAction = async (action) => {
-  if (!document || !onSelectionCommand) return
-  setCmdLoading(true)
-  try {
-    if (action.type === 'custom_command') {
-      // Custom text prompt — goes through AI
-      await onSelectionCommand(document.id, action.command, null)
-    } else {
-      // Direct action — bypass AI, go straight to executor
-      await onSelectionCommand(document.id, null, action.params)
+  const handleSelectionAction = async (action) => {
+    if (!document || !onSelectionCommand) return
+    setCmdLoading(true)
+    try {
+      if (action.type === 'custom_command') {
+        await onSelectionCommand(document.id, action.command, null)
+      } else {
+        await onSelectionCommand(document.id, null, action.params)
+      }
+      setShowToolbar(false)
+      setSelectedTexts([])
+    } catch (e) {
+      console.error('Selection command failed:', e)
+    } finally {
+      setCmdLoading(false)
     }
-    setShowToolbar(false)
-    setSelectedTexts([])
-  } catch (e) {
-    console.error('Selection command failed:', e)
-  } finally {
-    setCmdLoading(false)
   }
-}
 
   if (!document) {
     return (
@@ -213,29 +208,40 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
             <FileText size={14} />
             <span>{document.title}</span>
           </div>
-          <div
-            className={`preview__selection-badge ${selectionMode ? 'preview__selection-badge--active' : ''}`}
-            onClick={() => setSelectionMode(!selectionMode)}
-            title="Click to toggle selection mode"
-          >
-            <MousePointer size={11} />
-            {selectedTexts.length > 0
-              ? `${selectedTexts.length} selected`
-              : 'Click to select'}
-          </div>
+          {wordCount !== null && (
+            <div className="preview__word-count">
+              <Hash size={11} />
+              {wordCount.toLocaleString()} words
+            </div>
+          )}
         </div>
         <div className="preview__toolbar-right">
-          <button className="preview__tool-btn" onClick={() => setZoom(z => Math.max(z - 10, 50))} title="Zoom out">
+          <button
+            className="preview__tool-btn"
+            onClick={() => setZoom(z => Math.max(z - 10, 50))}
+            title="Zoom out"
+          >
             <ZoomOut size={14} />
           </button>
           <span className="preview__zoom-label">{zoom}%</span>
-          <button className="preview__tool-btn" onClick={() => setZoom(z => Math.min(z + 10, 200))} title="Zoom in">
+          <button
+            className="preview__tool-btn"
+            onClick={() => setZoom(z => Math.min(z + 10, 200))}
+            title="Zoom in"
+          >
             <ZoomIn size={14} />
           </button>
-          <button className="preview__tool-btn" onClick={loadPreview} title="Refresh preview">
+          <button
+            className="preview__tool-btn"
+            onClick={loadPreview}
+            title="Refresh preview"
+          >
             <RefreshCw size={14} className={loading ? 'preview__spin' : ''} />
           </button>
-          <button className="preview__download-btn" onClick={() => onDownload(document)}>
+          <button
+            className="preview__download-btn"
+            onClick={() => onDownload(document)}
+          >
             <Download size={14} />
             Download
           </button>
@@ -246,23 +252,33 @@ const DocumentPreview = ({ document, refreshTrigger, onDownload, onSelectionComm
       {!showToolbar && (
         <div className="preview__hint">
           <MousePointer size={11} />
-          Click any paragraph to select it · Ctrl+Click for multiple selection
+          Click any paragraph to select · Ctrl+Click for multiple selection
         </div>
       )}
 
       {/* Preview area */}
-      <div className="preview__area">
+      <div className="preview__area" ref={areaRef}>
         {loading && (
           <div className="preview__loading">
-            <div className="preview__loading-spinner" />
-            <span>Updating preview...</span>
+            <div className="preview__loading-skeleton">
+              <div className="preview__skeleton-line preview__skeleton-line--title" />
+              <div className="preview__skeleton-line" />
+              <div className="preview__skeleton-line" />
+              <div className="preview__skeleton-line preview__skeleton-line--short" />
+              <div className="preview__skeleton-line preview__skeleton-line--title" />
+              <div className="preview__skeleton-line" />
+              <div className="preview__skeleton-line" />
+            </div>
           </div>
         )}
-        {html && (
+        {html && !loading && (
           <div className="preview__paper-wrapper">
             <div
               className="preview__paper"
-              style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
+              style={{
+                transform: `scale(${zoom / 100})`,
+                transformOrigin: 'top center'
+              }}
             >
               <iframe
                 ref={iframeRef}

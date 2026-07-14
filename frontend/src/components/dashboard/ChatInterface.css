@@ -9,6 +9,7 @@
   box-shadow: var(--shadow-card);
 }
 
+/* Header */
 .chat__header {
   display: flex;
   align-items: center;
@@ -49,7 +50,13 @@
   max-width: 220px;
 }
 
-.chat__clear-btn {
+.chat__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat__icon-btn {
   width: 30px; height: 30px;
   border: 1.5px solid var(--border-light);
   border-radius: var(--radius-sm);
@@ -60,12 +67,52 @@
   transition: var(--transition-fast);
 }
 
-.chat__clear-btn:hover {
+.chat__icon-btn:hover {
   background: var(--bg-overlay);
   color: var(--color-primary);
   border-color: var(--border-medium);
 }
 
+/* Shortcuts panel */
+.chat__shortcuts {
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--bg-secondary);
+  border-bottom: 1.5px solid var(--border-light);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat__shortcuts-title {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.chat__shortcut {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+}
+
+.chat__shortcut kbd {
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: var(--font-family);
+  color: var(--text-dark);
+  white-space: nowrap;
+}
+
+/* Messages */
 .chat__messages {
   flex: 1;
   overflow-y: auto;
@@ -134,6 +181,31 @@
 
 .chat__message--user .chat__bubble-text { color: white; }
 
+/* Action results badges */
+.chat__actions-summary {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.chat__actions-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.chat__actions-badge--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-primary);
+}
+
+.chat__actions-badge--error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+}
+
 .chat__bubble-time {
   font-size: 10px;
   color: var(--text-muted);
@@ -142,6 +214,7 @@
 
 .chat__message--user .chat__bubble-time { color: rgba(255,255,255,0.65); }
 
+/* Thinking dots */
 .chat__thinking {
   display: flex;
   align-items: center;
@@ -205,6 +278,52 @@
   flex-shrink: 0;
 }
 
+/* Autocomplete suggestions */
+.chat__suggestions {
+  margin: 0 var(--space-lg);
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-md);
+  margin-bottom: var(--space-xs);
+}
+
+.chat__suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-body);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  text-align: left;
+  transition: var(--transition-fast);
+}
+
+.chat__suggestion:last-of-type { border-bottom: none; }
+
+.chat__suggestion svg { color: var(--color-primary); flex-shrink: 0; }
+
+.chat__suggestion:hover,
+.chat__suggestion--selected {
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--color-primary);
+}
+
+.chat__suggestions-hint {
+  padding: 4px 14px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
 /* Input area */
 .chat__input-area {
   padding: var(--space-md) var(--space-lg);
@@ -223,7 +342,7 @@
   background: var(--bg-card);
   border: 1.5px solid var(--border-medium);
   border-radius: var(--radius-lg);
-  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-sm);
+  padding: var(--space-sm);
   transition: var(--transition-base);
 }
 
@@ -295,6 +414,10 @@
 .chat__input-hint {
   font-size: 11px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .chat__input-hint kbd {
@@ -304,4 +427,5 @@
   border-radius: 4px;
   padding: 1px 5px;
   font-family: var(--font-family);
+  color: var(--text-dark);
 }
