@@ -1,5 +1,6 @@
 import os
 import uuid
+import base64
 import mammoth
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -12,6 +13,17 @@ ALLOWED_TYPES = [
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
 ]
+
+
+def _convert_image(image):
+    """Convert embedded image to base64 data URI for HTML preview."""
+    try:
+        with image.open() as img_file:
+            image_bytes = img_file.read()
+        encoded = base64.b64encode(image_bytes).decode('utf-8')
+        return {"src": f"data:{image.content_type};base64,{encoded}"}
+    except Exception:
+        return {"src": ""}
 
 
 class DocumentService:
@@ -49,14 +61,7 @@ class DocumentService:
                 result = mammoth.convert_to_html(
                     f,
                     style_map=style_map,
-                    convert_image=mammoth.images.img_element(
-                        lambda image: {
-                            "src": "data:" + image.content_type +
-                                   ";base64," +
-                                   __import__('base64').b64encode(
-                                       image.open().read()).decode()
-                        }
-                    )
+                    convert_image=mammoth.images.img_element(_convert_image)
                 )
             html_body = result.value
             return f"""<!DOCTYPE html>
@@ -75,9 +80,9 @@ class DocumentService:
     max-width: 800px;
     margin: 0 auto;
   }}
-  h1 {{ font-size: 18pt; font-weight: bold; margin: 16px 0 8px; }}
-  h2 {{ font-size: 15pt; font-weight: bold; margin: 14px 0 6px; }}
-  h3 {{ font-size: 13pt; font-weight: bold; margin: 12px 0 4px; }}
+  h1 {{ font-size: 18pt; font-weight: bold; margin: 16px 0 8px; color: #2E74B5; }}
+  h2 {{ font-size: 15pt; font-weight: bold; margin: 14px 0 6px; color: #2E74B5; }}
+  h3 {{ font-size: 13pt; font-weight: bold; margin: 12px 0 4px; color: #1F4E79; }}
   h4, h5, h6 {{ font-size: 12pt; font-weight: bold; margin: 10px 0 4px; }}
   p  {{ margin: 6px 0; text-align: justify; }}
   table {{
@@ -102,6 +107,7 @@ class DocumentService:
     display: block;
   }}
   hr {{ border: none; border-top: 1px solid #000; margin: 12px 0; }}
+  a {{ color: #2E74B5; }}
 </style>
 </head>
 <body>
