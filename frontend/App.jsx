@@ -1,65 +1,73 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import Login from './pages/auth/Login'
-import Register from './pages/auth/Register'
 import useAuthStore from './store/authStore'
-import './App.css'
+import Login         from './pages/auth/Login'
+import Register      from './pages/auth/Register'
+import ResetPassword from './pages/auth/ResetPassword'
+import Dashboard     from './pages/dashboard/Dashboard'
+import Profile       from './pages/profile/Profile'
 
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isLoading } = useAuthStore()
+  if (isLoading) return (
+    <div style={{
+      display:'flex', alignItems:'center', justifyContent:'center',
+      height:'100vh', background:'var(--bg-primary)',
+      color:'var(--text-muted)', fontSize:'14px', fontFamily:'var(--font-family)'
+    }}>
+      Loading Texlify...
+    </div>
+  )
   return isAuthenticated ? children : <Navigate to="/login" replace />
 }
 
 const PublicRoute = ({ children }) => {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isLoading } = useAuthStore()
+  if (isLoading) return null
   return !isAuthenticated ? children : <Navigate to="/dashboard" replace />
 }
 
-const Dashboard = () => {
-  const { user, logout } = useAuthStore()
-  return (
-    <div className="dashboard-placeholder">
-      <div className="dashboard-placeholder__card">
-        <div className="dashboard-placeholder__icon">🎉</div>
-        <h1 className="dashboard-placeholder__title">Welcome to Texlify!</h1>
-        <p className="dashboard-placeholder__name">{user?.full_name}</p>
-        <p className="dashboard-placeholder__email">{user?.email}</p>
-        <button className="dashboard-placeholder__logout" onClick={logout}>
-          Sign Out
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function App() {
+  const { initializeAuth } = useAuthStore()
+
+  useEffect(() => {
+    initializeAuth()
+  }, [])
+
   return (
     <BrowserRouter>
       <Toaster
         position="top-right"
         toastOptions={{
+          duration: 3000,
           style: {
-            background: '#FFFFFF',
-            color: '#064E3B',
-            border: '1.5px solid #BBF7D0',
-            borderRadius: '10px',
-            fontSize: '14px',
-            fontWeight: '500',
-            boxShadow: '0 4px 16px rgba(16, 185, 129, 0.12)',
+            background:   'var(--bg-card)',
+            color:        'var(--text-dark)',
+            border:       '1.5px solid var(--border-light)',
+            borderRadius: 'var(--radius-md)',
+            fontSize:     '13px',
+            fontFamily:   'var(--font-family)',
           },
-          success: {
-            iconTheme: { primary: '#10B981', secondary: '#FFFFFF' },
-          },
-          error: {
-            iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
-          },
+          success: { iconTheme: { primary: '#10B981', secondary: 'white' } },
+          error:   { iconTheme: { primary: '#EF4444', secondary: 'white' } },
         }}
       />
       <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/"
+          element={<Navigate to="/dashboard" replace />} />
+        <Route path="/login"
+          element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register"
+          element={<PublicRoute><Register /></PublicRoute>} />
+        <Route path="/reset-password"
+          element={<ResetPassword />} />
+        <Route path="/dashboard"
+          element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/profile"
+          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="*"
+          element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )

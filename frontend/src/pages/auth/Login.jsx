@@ -1,70 +1,78 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
-import { toast } from 'react-hot-toast'
-import Input from '../../components/ui/Input'
-import Button from '../../components/ui/Button'
+import { useNavigate, Link } from 'react-router-dom'
+import { Mail, Lock, Eye, EyeOff, Sparkles, ArrowRight } from 'lucide-react'
 import { authService } from '../../services/authService'
 import useAuthStore from '../../store/authStore'
+import { toast } from 'react-hot-toast'
 import './Login.css'
 
 const Login = () => {
-  const navigate = useNavigate()
+  const [email, setEmail]               = useState('')
+  const [password, setPassword]         = useState('')
+  const [showPwd, setShowPwd]           = useState(false)
+  const [loading, setLoading]           = useState(false)
+  const [showForgot, setShowForgot]     = useState(false)
+  const [forgotEmail, setForgotEmail]   = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSent, setForgotSent]     = useState(false)
+
   const { setAuth } = useAuthStore()
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [form, setForm] = useState({ email: '', password: '' })
-  const [errors, setErrors] = useState({})
+  const navigate    = useNavigate()
 
-  const validate = () => {
-    const newErrors = {}
-    if (!form.email.trim()) newErrors.email = 'Email is required'
-    if (!form.password)     newErrors.password = 'Password is required'
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
-    if (!validate()) return
+    if (!email || !password) { toast.error('Please fill in all fields'); return }
     setLoading(true)
     try {
-      const data = await authService.login(form)
+      const data = await authService.login(email, password)
       setAuth(data.user, data.access_token, data.refresh_token)
-      toast.success(`Welcome back, ${data.user.full_name}!`)
+      toast.success(`Welcome back, ${data.user.full_name.split(' ')[0]}!`)
       navigate('/dashboard')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Login failed')
+      toast.error(err?.response?.data?.detail || 'Login failed')
     } finally {
       setLoading(false)
     }
   }
 
+  const handleForgotPassword = async (e) => {
+    e.preventDefault()
+    if (!forgotEmail) { toast.error('Please enter your email'); return }
+    setForgotLoading(true)
+    try {
+      await authService.forgotPassword(forgotEmail)
+      setForgotSent(true)
+      toast.success('Reset link sent! Check your email.')
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to send reset email')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
   return (
     <div className="auth-page">
-
+      {/* Left panel */}
       <div className="auth-left">
-        <div className="auth-left__inner">
-          <div className="auth-logo">
-            <div className="auth-logo__icon">T</div>
-            <span className="auth-logo__text">Texlify</span>
+        <div className="auth-left__content">
+          <div className="auth-left__logo">
+            <Sparkles size={28} />
           </div>
-          <h1 className="auth-left__heading">
-            Edit Documents<br />with the Power of AI
-          </h1>
-          <p className="auth-left__subtext">
-            Type a command. Watch your document transform instantly.
-            No clicking. No menus. Just natural language.
+          <h1 className="auth-left__title">Texlify</h1>
+          <p className="auth-left__subtitle">
+            AI-powered Word document editor. Edit, format, and transform
+            your documents with natural language commands.
           </p>
-          <div className="auth-features">
+          <div className="auth-left__features">
             {[
-              'Format entire documents in seconds',
-              'Insert tables, images and watermarks',
-              'Convert to SPPU, APA, IEEE formats',
-              'Undo any change instantly',
+              '100+ formatting actions',
+              'SPPU, IEEE, APA, MLA formats',
+              'Live preview as you edit',
+              'Paragraph-level selection',
+              'Dark mode + mobile ready',
             ].map((f, i) => (
-              <div className="auth-feature-item" key={i}>
-                <span className="auth-feature-dot" />
+              <div key={i} className="auth-left__feature">
+                <span className="auth-left__feature-dot" />
                 {f}
               </div>
             ))}
@@ -72,65 +80,136 @@ const Login = () => {
         </div>
       </div>
 
+      {/* Right panel */}
       <div className="auth-right">
-        <div className="auth-card animate-fadeInUp">
+        <div className="auth-form-container">
 
-          <div className="auth-card__header">
-            <h2 className="auth-card__title">Welcome back</h2>
-            <p className="auth-card__subtitle">Sign in to your Texlify account</p>
-          </div>
+          {!showForgot ? (
+            <>
+              <h2 className="auth-form__title">Welcome back</h2>
+              <p className="auth-form__subtitle">Sign in to your Texlify account</p>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+              <form className="auth-form" onSubmit={handleLogin}>
+                <div className="auth-field">
+                  <label className="auth-label">Email address</label>
+                  <div className="auth-input-wrapper">
+                    <Mail size={16} className="auth-input-icon" />
+                    <input
+                      className="auth-input"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                </div>
 
-            <Input
-              label="Email Address"
-              type="email"
-              placeholder="you@example.com"
-              icon={Mail}
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              error={errors.email}
-            />
+                <div className="auth-field">
+                  <div className="auth-label-row">
+                    <label className="auth-label">Password</label>
+                    <button
+                      type="button"
+                      className="auth-forgot-link"
+                      onClick={() => setShowForgot(true)}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="auth-input-wrapper">
+                    <Lock size={16} className="auth-input-icon" />
+                    <input
+                      className="auth-input"
+                      type={showPwd ? 'text' : 'password'}
+                      placeholder="Your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="auth-eye-btn"
+                      onClick={() => setShowPwd(!showPwd)}
+                    >
+                      {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
 
-            <div className="auth-password-group">
-              <Input
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter your password"
-                icon={Lock}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                error={errors.password}
-              />
-              <div className="auth-password-actions">
                 <button
-                  type="button"
-                  className="auth-toggle-password"
-                  onClick={() => setShowPassword(!showPassword)}
+                  type="submit"
+                  className="auth-submit-btn"
+                  disabled={loading}
                 >
-                  {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
-                  {showPassword ? 'Hide' : 'Show'}
+                  {loading ? 'Signing in...' : (
+                    <><span>Sign in</span><ArrowRight size={16} /></>
+                  )}
                 </button>
-                <Link to="/forgot-password" className="auth-forgot-link">
-                  Forgot password?
+              </form>
+
+              <p className="auth-switch">
+                Don't have an account?{' '}
+                <Link to="/register" className="auth-switch-link">
+                  Create one
                 </Link>
-              </div>
-            </div>
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                className="auth-back-btn"
+                onClick={() => { setShowForgot(false); setForgotSent(false) }}
+              >
+                ← Back to login
+              </button>
+              <h2 className="auth-form__title">Reset password</h2>
+              <p className="auth-form__subtitle">
+                Enter your email and we'll send you a reset link
+              </p>
 
-            <Button type="submit" loading={loading} size="md">
-              Sign In
-            </Button>
-
-          </form>
-
-          <p className="auth-card__footer">
-            Don't have an account?{' '}
-            <Link to="/register" className="auth-link">Create one free</Link>
-          </p>
-
+              {forgotSent ? (
+                <div className="auth-success-box">
+                  <div className="auth-success-icon">✓</div>
+                  <h3>Check your email!</h3>
+                  <p>
+                    We sent a reset link to <strong>{forgotEmail}</strong>.
+                    Click the link in the email to reset your password.
+                  </p>
+                  <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                    If you don't see it, check your spam folder.
+                    The link expires in 1 hour.
+                  </p>
+                </div>
+              ) : (
+                <form className="auth-form" onSubmit={handleForgotPassword}>
+                  <div className="auth-field">
+                    <label className="auth-label">Email address</label>
+                    <div className="auth-input-wrapper">
+                      <Mail size={16} className="auth-input-icon" />
+                      <input
+                        className="auth-input"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    disabled={forgotLoading}
+                  >
+                    {forgotLoading ? 'Sending...' : (
+                      <><span>Send reset link</span><ArrowRight size={16} /></>
+                    )}
+                  </button>
+                </form>
+              )}
+            </>
+          )}
         </div>
       </div>
-
     </div>
   )
 }
