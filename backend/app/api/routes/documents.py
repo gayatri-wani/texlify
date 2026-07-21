@@ -15,28 +15,27 @@ from app.agent.executor import DocumentExecutor, backup_document
 import os
 import json
 import time
-
-router = APIRouter(prefix="/documents", tags=["Documents"])
-
-# ── Rate limiting (simple in-memory) ─────────────────────────────────────────
 from collections import defaultdict
 import threading
 
+router = APIRouter(prefix="/documents", tags=["Documents"])
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
 _rate_store = defaultdict(list)
 _rate_lock  = threading.Lock()
 
-RATE_LIMIT_COMMANDS   = 30   # max commands per window
-RATE_LIMIT_WINDOW_SEC = 60   # per 60 seconds
-RATE_LIMIT_UPLOADS    = 10   # max uploads per window
+RATE_LIMIT_COMMANDS   = 30
+RATE_LIMIT_WINDOW_SEC = 60
+RATE_LIMIT_UPLOADS    = 10
 
 
 def _check_rate_limit(user_id: int, action: str = "command") -> bool:
-    """Returns True if allowed, False if rate limited."""
-    key    = f"{user_id}:{action}"
-    now    = time.time()
-    limit  = RATE_LIMIT_COMMANDS if action == "command" else RATE_LIMIT_UPLOADS
+    key   = f"{user_id}:{action}"
+    now   = time.time()
+    limit = RATE_LIMIT_COMMANDS if action == "command" else RATE_LIMIT_UPLOADS
     with _rate_lock:
-        timestamps = [t for t in _rate_store[key] if now - t < RATE_LIMIT_WINDOW_SEC]
+        timestamps = [t for t in _rate_store[key]
+                      if now - t < RATE_LIMIT_WINDOW_SEC]
         if len(timestamps) >= limit:
             _rate_store[key] = timestamps
             return False
@@ -66,14 +65,15 @@ class UndoRequest(BaseModel):
     backup_filename: str
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Upload ────────────────────────────────────────────────────────────────────
 
-@router.post("/upload", response_model=DocumentResponse,
+@router.post("/upload",
+             response_model=DocumentResponse,
              status_code=status.HTTP_201_CREATED)
 def upload_document(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    file:         UploadFile = File(...),
+    db:           Session    = Depends(get_db),
+    current_user: User       = Depends(get_current_user)
 ):
     if not _check_rate_limit(current_user.id, "upload"):
         raise HTTPException(
@@ -85,21 +85,22 @@ def upload_document(
 
 @router.post("/upload-image")
 def upload_image(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    file:         UploadFile = File(...),
+    db:           Session    = Depends(get_db),
+    current_user: User       = Depends(get_current_user)
 ):
-    """Upload an image file to the server and return its server path for use in commands."""
-    allowed_types = ["image/jpeg", "image/png", "image/gif",
-                     "image/webp", "image/bmp", "image/tiff"]
+    allowed_types = [
+        "image/jpeg", "image/png", "image/gif",
+        "image/webp", "image/bmp", "image/tiff"
+    ]
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only image files are allowed (JPEG, PNG, GIF, WEBP, BMP)"
+            detail="Only image files allowed (JPEG, PNG, GIF, WEBP, BMP)"
         )
     contents  = file.file.read()
     file_size = len(contents)
-    if file_size > 10 * 1024 * 1024:  # 10MB limit for images
+    if file_size > 10 * 1024 * 1024:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Image size exceeds 10MB limit"
@@ -113,45 +114,51 @@ def upload_image(
     with open(file_path, "wb") as f:
         f.write(contents)
     return {
-        "filename":    stored_filename,
-        "server_path": file_path,
-        "url":         f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
-        "size":        file_size,
+        "filename":     stored_filename,
+        "server_path":  file_path,
+        "url":          f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
+        "size":         file_size,
         "content_type": file.content_type
     }
 
 
 @router.get("/images/{user_id}/{filename}")
 def serve_image(
-    user_id: int,
-    filename: str,
+    user_id:      int,
+    filename:     str,
     current_user: User = Depends(get_current_user)
 ):
-    """Serve an uploaded image file."""
     if current_user.id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
     file_path = os.path.join("uploads", str(user_id), "images", filename)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
     return FileResponse(file_path)
 
 
+# ── Documents ─────────────────────────────────────────────────────────────────
+
 @router.get("", response_model=List[DocumentResponse])
 def get_documents(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
     return DocumentService.get_all(db, current_user)
 
 
 @router.patch("/{document_id}/rename")
 def rename_document(
-    document_id: int,
-    request: RenameRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    request:      RenameRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
-    """Rename a document."""
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not request.title or not request.title.strip():
         raise HTTPException(
@@ -159,16 +166,15 @@ def rename_document(
             detail="Title cannot be empty"
         )
     document.title = request.title.strip()
-    db.commit()
-    db.refresh(document)
-    return {"message": "Document renamed successfully", "title": document.title}
+    db.commit(); db.refresh(document)
+    return {"message": "Document renamed", "title": document.title}
 
 
 @router.delete("/{document_id}")
 def delete_document(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
     DocumentService.delete(db, document_id, current_user)
     return {"message": "Document deleted successfully"}
@@ -176,9 +182,9 @@ def delete_document(
 
 @router.get("/{document_id}/download")
 def download_document(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not os.path.exists(document.file_path):
@@ -189,19 +195,25 @@ def download_document(
     return FileResponse(
         path=document.file_path,
         filename=document.original_filename,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media_type=(
+            "application/vnd.openxmlformats-officedocument"
+            ".wordprocessingml.document"
+        )
     )
 
 
 @router.get("/{document_id}/preview")
 def preview_document(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not os.path.exists(document.file_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
     try:
         html = DocumentService.convert_to_html(document.file_path)
         return HTMLResponse(content=html)
@@ -214,40 +226,42 @@ def preview_document(
 
 @router.get("/{document_id}/backups")
 def get_backups(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
-    """Get list of available backups for a document."""
-    document = DocumentService.get_by_id(db, document_id, current_user)
-    backup_dir  = os.path.dirname(document.file_path)
-    base_name   = os.path.basename(document.file_path)
-    backups = []
+    document   = DocumentService.get_by_id(db, document_id, current_user)
+    backup_dir = os.path.dirname(document.file_path)
+    base_name  = os.path.basename(document.file_path)
+    backups    = []
     try:
         for f in os.listdir(backup_dir):
             if f.startswith(base_name + ".backup_"):
                 backup_time = f.split(".backup_")[1]
                 backups.append({
-                    "filename": f,
+                    "filename":  f,
                     "timestamp": backup_time,
-                    "display":  f"{backup_time[:4]}-{backup_time[4:6]}-{backup_time[6:8]} "
-                                f"{backup_time[9:11]}:{backup_time[11:13]}:{backup_time[13:15]}"
+                    "display":   (
+                        f"{backup_time[:4]}-{backup_time[4:6]}-"
+                        f"{backup_time[6:8]} "
+                        f"{backup_time[9:11]}:{backup_time[11:13]}:"
+                        f"{backup_time[13:15]}"
+                    )
                 })
     except Exception:
         pass
     backups.sort(key=lambda x: x["timestamp"], reverse=True)
-    return {"backups": backups[:10]}  # return latest 10
+    return {"backups": backups[:10]}
 
 
 @router.post("/{document_id}/undo")
 def undo_command(
-    document_id: int,
-    request: UndoRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    request:      UndoRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
-    """Restore document from a backup file."""
-    document = DocumentService.get_by_id(db, document_id, current_user)
+    document    = DocumentService.get_by_id(db, document_id, current_user)
     backup_dir  = os.path.dirname(document.file_path)
     backup_path = os.path.join(backup_dir, request.backup_filename)
     if not os.path.exists(backup_path):
@@ -255,25 +269,27 @@ def undo_command(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Backup not found: {request.backup_filename}"
         )
-    # Security: ensure backup belongs to this user's document
-    if not request.backup_filename.startswith(os.path.basename(document.file_path)):
+    if not request.backup_filename.startswith(
+            os.path.basename(document.file_path)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this backup"
         )
     import shutil
     shutil.copy2(backup_path, document.file_path)
-    return {"message": "Document restored successfully", "backup": request.backup_filename}
+    return {"message": "Document restored successfully"}
 
 
-@router.post("/{document_id}/command", response_model=CommandResponse)
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+@router.post("/{document_id}/command",
+             response_model=CommandResponse)
 def execute_command(
-    document_id: int,
-    request: CommandRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    request:      CommandRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
-    # Rate limiting
     if not _check_rate_limit(current_user.id, "command"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -324,14 +340,14 @@ def execute_command(
         )
 
 
-@router.post("/{document_id}/selection-command", response_model=CommandResponse)
+@router.post("/{document_id}/selection-command",
+             response_model=CommandResponse)
 def execute_selection_command(
-    document_id: int,
-    request: SelectionCommandRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    document_id:  int,
+    request:      SelectionCommandRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
-    """Execute a command directly on selected paragraphs — bypasses AI parser."""
     if not _check_rate_limit(current_user.id, "command"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

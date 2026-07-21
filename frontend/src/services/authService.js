@@ -6,8 +6,8 @@ export const authService = {
     return response.data
   },
 
-  login: async (data) => {
-    const response = await api.post('/auth/login', data)
+  login: async (email, password) => {
+    const response = await api.post('/auth/login', { email, password })
     return response.data
   },
 
@@ -17,7 +17,12 @@ export const authService = {
   },
 
   logout: async () => {
-    await api.post('/auth/logout')
+    try {
+      await api.post('/auth/logout')
+    } catch { /* ignore */ }
+    // Always clear tokens on logout
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
   },
 
   forgotPassword: async (email) => {
@@ -25,13 +30,26 @@ export const authService = {
     return response.data
   },
 
-  resetPassword: async (data) => {
-    const response = await api.post('/auth/reset-password', data)
+  resetPassword: async (token, newPassword) => {
+    const response = await api.post('/auth/reset-password', {
+      token,
+      new_password: newPassword
+    })
     return response.data
   },
 
-  changePassword: async (data) => {
-    const response = await api.post('/auth/change-password', data)
+  changePassword: async (currentPassword, newPassword) => {
+    const response = await api.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password:     newPassword
+    })
+    return response.data
+  },
+
+  deleteAccount: async (password) => {
+    const response = await api.delete('/auth/delete-account', {
+      data: { password }
+    })
     return response.data
   },
 }

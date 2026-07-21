@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from tracemalloc import start
 from docx import Document as DocxDocument
 from docx.shared import Pt, Inches, RGBColor, Mm, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -1162,11 +1163,23 @@ class DocumentExecutor:
         return f"Page color set to {color}"
 
     def action_add_line_numbers(self, start=1, step=1, restart="newPage", **kwargs):
+        """Add line numbers to document sections."""
+        # Fix: restart must be string, not bool
+        if isinstance(restart, bool):
+            restart = "newPage" if restart else "continuous"
+        valid_restarts = ["newPage", "newSection", "continuous"]
+        if restart not in valid_restarts:
+            restart = "newPage"
         for section in self.doc.sections:
-            ln = OxmlElement('w:lnNumType')
-            ln.set(qn('w:countBy'),str(step)); ln.set(qn('w:start'),str(start))
-            ln.set(qn('w:restart'),restart); section._sectPr.append(ln)
-        return "Line numbers added"
+        # Remove existing line numbers first
+            for existing in section._sectPr.findall(qn('w:lnNumType')):
+                section._sectPr.remove(existing)
+        ln = OxmlElement('w:lnNumType')
+        ln.set(qn('w:countBy'), str(int(step)))
+        ln.set(qn('w:start'),   str(int(start)))
+        ln.set(qn('w:restart'), restart)
+        section._sectPr.append(ln)
+        return f"Line numbers added: start={start} step={step} restart={restart}"
 
     def action_remove_line_numbers(self, **kwargs):
         for section in self.doc.sections:
@@ -1315,12 +1328,32 @@ class DocumentExecutor:
     # TABLES
     # ─────────────────────────────────────────
 
-    def action_insert_table(self, rows=3, cols=3, position="end", headers=None, **kwargs):
-        table = self.doc.add_table(rows=rows, cols=cols); table.style = "Table Grid"
-        if headers:
-            for i, h in enumerate(headers[:cols]): table.rows[0].cells[i].text = h
-        return f"Table inserted {rows}x{cols}"
-
+    def action_insert_table(self, rows=2, cols=2, data=None, **kwargs):
+        """Insert a table with safe styling fallback."""
+        try:
+            table = self.doc.add_table(rows=rows, cols=cols)
+            try:
+                table.style = "Table Grid"
+            except KeyError:
+                try:
+                    table.style = "TableGrid"
+                except KeyError:
+                    try:
+                        table.style = "Light Shading"
+                    except KeyError:
+                        pass
+            self.action_set_table_borders(table_index=0, border_color="#000000", border_size=4)
+            if headers:
+                for i, h in enumerate(headers[:cols]):
+                    table.rows[0].cells[i].text = h
+            if data:
+                for r, row in enumerate(data[:rows]):
+                    for c, val in enumerate(row[:cols]):
+                        table.rows[r].cells[c].text = str(val)
+            return f"Table inserted {rows}x{cols}"
+        except Exception as e:
+            return f"Table error: {e}"
+    
     def action_format_table(self, style="Table Grid", **kwargs):
         for table in self.doc.tables:
             try: table.style = style

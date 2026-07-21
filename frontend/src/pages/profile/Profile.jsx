@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   User, Mail, Lock, Save, ArrowLeft,
-  Eye, EyeOff, CheckCircle, AlertCircle
+  Eye, EyeOff, CheckCircle, AlertCircle, Trash2
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import { authService } from '../../services/authService'
@@ -10,32 +10,37 @@ import { toast } from 'react-hot-toast'
 import './Profile.css'
 
 const Profile = () => {
-  const { user, setAuth } = useAuthStore()
-  const navigate          = useNavigate()
+  const { user, setAuth, logout } = useAuthStore()
+  const navigate                  = useNavigate()
 
-  const [fullName, setFullName]         = useState(user?.full_name || '')
-  const [savingName, setSavingName]     = useState(false)
+  const [fullName, setFullName]       = useState(user?.full_name || '')
+  const [savingName, setSavingName]   = useState(false)
 
-  const [currentPwd, setCurrentPwd]     = useState('')
-  const [newPwd, setNewPwd]             = useState('')
-  const [confirmPwd, setConfirmPwd]     = useState('')
-  const [showCurrent, setShowCurrent]   = useState(false)
-  const [showNew, setShowNew]           = useState(false)
-  const [showConfirm, setShowConfirm]   = useState(false)
-  const [savingPwd, setSavingPwd]       = useState(false)
+  const [currentPwd, setCurrentPwd]   = useState('')
+  const [newPwd, setNewPwd]           = useState('')
+  const [confirmPwd, setConfirmPwd]   = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew]         = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [savingPwd, setSavingPwd]     = useState(false)
+
+  const [deletePwd, setDeletePwd]     = useState('')
+  const [showDelete, setShowDelete]   = useState(false)
+  const [deletingAcct, setDeletingAcct] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const passwordStrength = (pwd) => {
-    let score = 0
-    if (pwd.length >= 8)                        score++
-    if (/[A-Z]/.test(pwd))                      score++
-    if (/[a-z]/.test(pwd))                      score++
-    if (/\d/.test(pwd))                         score++
-    if (/[!@#$%^&*(),.?":{}|<>]/.test(pwd))    score++
-    return score
+    let s = 0
+    if (pwd.length >= 8)                     s++
+    if (/[A-Z]/.test(pwd))                   s++
+    if (/[a-z]/.test(pwd))                   s++
+    if (/\d/.test(pwd))                      s++
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) s++
+    return s
   }
 
-  const strengthLabel = ['', 'Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong']
-  const strengthColor = ['', '#EF4444', '#F59E0B', '#EAB308', '#10B981', '#059669']
+  const strengthLabel = ['','Very Weak','Weak','Fair','Strong','Very Strong']
+  const strengthColor = ['','#EF4444','#F59E0B','#EAB308','#10B981','#059669']
   const pwdScore      = passwordStrength(newPwd)
 
   const handleSaveName = async (e) => {
@@ -44,11 +49,9 @@ const Profile = () => {
     if (fullName.trim() === user?.full_name) { toast('No changes made'); return }
     setSavingName(true)
     try {
-      // Update via API — for now update locally since backend endpoint may not exist yet
       const updatedUser = { ...user, full_name: fullName.trim() }
-      setAuth(updatedUser, localStorage.getItem('access_token'),
-              localStorage.getItem('refresh_token'))
-      toast.success('Name updated successfully!')
+      setAuth(updatedUser, null, null)
+      toast.success('Name updated!')
     } catch {
       toast.error('Failed to update name')
     } finally {
@@ -59,18 +62,14 @@ const Profile = () => {
   const handleChangePassword = async (e) => {
     e.preventDefault()
     if (!currentPwd || !newPwd || !confirmPwd) {
-      toast.error('Please fill in all password fields'); return
+      toast.error('Fill in all password fields'); return
     }
-    if (newPwd !== confirmPwd) {
-      toast.error('New passwords do not match'); return
-    }
-    if (pwdScore < 3) {
-      toast.error('Password is too weak'); return
-    }
+    if (newPwd !== confirmPwd) { toast.error('Passwords do not match'); return }
+    if (pwdScore < 3) { toast.error('Password is too weak'); return }
     setSavingPwd(true)
     try {
       await authService.changePassword(currentPwd, newPwd)
-      toast.success('Password changed successfully!')
+      toast.success('Password changed!')
       setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Failed to change password')
@@ -79,14 +78,27 @@ const Profile = () => {
     }
   }
 
+  const handleDeleteAccount = async (e) => {
+    e.preventDefault()
+    if (!deletePwd) { toast.error('Enter your password to confirm'); return }
+    setDeletingAcct(true)
+    try {
+      await authService.deleteAccount(deletePwd)
+      toast.success('Account deleted')
+      logout()
+      navigate('/login')
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to delete account')
+    } finally {
+      setDeletingAcct(false)
+    }
+  }
+
   return (
     <div className="profile">
-
-      {/* Header */}
       <div className="profile__header">
         <button className="profile__back" onClick={() => navigate('/dashboard')}>
-          <ArrowLeft size={16} />
-          Back to Dashboard
+          <ArrowLeft size={16} /> Back to Dashboard
         </button>
         <h1 className="profile__title">My Profile</h1>
         <p className="profile__subtitle">Manage your account settings</p>
@@ -94,7 +106,7 @@ const Profile = () => {
 
       <div className="profile__content">
 
-        {/* Avatar card */}
+        {/* Avatar */}
         <div className="profile__card profile__card--avatar">
           <div className="profile__avatar">
             {user?.full_name?.charAt(0).toUpperCase()}
@@ -103,8 +115,7 @@ const Profile = () => {
             <h2 className="profile__avatar-name">{user?.full_name}</h2>
             <p className="profile__avatar-email">{user?.email}</p>
             <div className="profile__avatar-badge">
-              <CheckCircle size={12} />
-              Verified Account
+              <CheckCircle size={12} /> Verified Account
             </div>
           </div>
         </div>
@@ -112,8 +123,7 @@ const Profile = () => {
         {/* Update Name */}
         <div className="profile__card">
           <div className="profile__card-header">
-            <User size={18} />
-            <h3>Personal Information</h3>
+            <User size={18} /><h3>Personal Information</h3>
           </div>
           <form onSubmit={handleSaveName} className="profile__form">
             <div className="profile__field">
@@ -142,11 +152,7 @@ const Profile = () => {
               </div>
               <p className="profile__hint">Email cannot be changed</p>
             </div>
-            <button
-              type="submit"
-              className="profile__save-btn"
-              disabled={savingName}
-            >
+            <button type="submit" className="profile__save-btn" disabled={savingName}>
               {savingName ? 'Saving...' : <><Save size={14} /> Save Changes</>}
             </button>
           </form>
@@ -155,12 +161,9 @@ const Profile = () => {
         {/* Change Password */}
         <div className="profile__card">
           <div className="profile__card-header">
-            <Lock size={18} />
-            <h3>Change Password</h3>
+            <Lock size={18} /><h3>Change Password</h3>
           </div>
           <form onSubmit={handleChangePassword} className="profile__form">
-
-            {/* Current password */}
             <div className="profile__field">
               <label className="profile__label">Current Password</label>
               <div className="profile__input-wrapper">
@@ -172,17 +175,12 @@ const Profile = () => {
                   onChange={(e) => setCurrentPwd(e.target.value)}
                   placeholder="Enter current password"
                 />
-                <button
-                  type="button"
-                  className="profile__eye-btn"
-                  onClick={() => setShowCurrent(!showCurrent)}
-                >
+                <button type="button" className="profile__eye-btn"
+                        onClick={() => setShowCurrent(!showCurrent)}>
                   {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
             </div>
-
-            {/* New password */}
             <div className="profile__field">
               <label className="profile__label">New Password</label>
               <div className="profile__input-wrapper">
@@ -194,11 +192,8 @@ const Profile = () => {
                   onChange={(e) => setNewPwd(e.target.value)}
                   placeholder="Enter new password"
                 />
-                <button
-                  type="button"
-                  className="profile__eye-btn"
-                  onClick={() => setShowNew(!showNew)}
-                >
+                <button type="button" className="profile__eye-btn"
+                        onClick={() => setShowNew(!showNew)}>
                   {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -206,15 +201,12 @@ const Profile = () => {
                 <div className="profile__strength">
                   <div className="profile__strength-bar">
                     {[1,2,3,4,5].map(i => (
-                      <div
-                        key={i}
-                        className="profile__strength-segment"
-                        style={{
-                          background: i <= pwdScore
-                            ? strengthColor[pwdScore]
-                            : 'var(--border-light)'
-                        }}
-                      />
+                      <div key={i} className="profile__strength-segment"
+                           style={{
+                             background: i <= pwdScore
+                               ? strengthColor[pwdScore]
+                               : 'var(--border-light)'
+                           }} />
                     ))}
                   </div>
                   <span style={{ color: strengthColor[pwdScore] }}>
@@ -223,8 +215,6 @@ const Profile = () => {
                 </div>
               )}
             </div>
-
-            {/* Confirm password */}
             <div className="profile__field">
               <label className="profile__label">Confirm New Password</label>
               <div className="profile__input-wrapper">
@@ -236,50 +226,40 @@ const Profile = () => {
                   onChange={(e) => setConfirmPwd(e.target.value)}
                   placeholder="Confirm new password"
                 />
-                <button
-                  type="button"
-                  className="profile__eye-btn"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                >
+                <button type="button" className="profile__eye-btn"
+                        onClick={() => setShowConfirm(!showConfirm)}>
                   {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               {confirmPwd && newPwd !== confirmPwd && (
                 <p className="profile__error">
-                  <AlertCircle size={12} />
-                  Passwords do not match
+                  <AlertCircle size={12} /> Passwords do not match
                 </p>
               )}
               {confirmPwd && newPwd === confirmPwd && confirmPwd.length > 0 && (
                 <p className="profile__success-msg">
-                  <CheckCircle size={12} />
-                  Passwords match
+                  <CheckCircle size={12} /> Passwords match
                 </p>
               )}
             </div>
-
-            {/* Password requirements */}
             <div className="profile__requirements">
               <p className="profile__requirements-title">Password must have:</p>
               {[
-                { label: 'At least 8 characters',     test: newPwd.length >= 8 },
-                { label: 'One uppercase letter',       test: /[A-Z]/.test(newPwd) },
-                { label: 'One lowercase letter',       test: /[a-z]/.test(newPwd) },
-                { label: 'One number',                 test: /\d/.test(newPwd) },
-                { label: 'One special character',      test: /[!@#$%^&*(),.?":{}|<>]/.test(newPwd) },
+                { label: 'At least 8 characters',  test: newPwd.length >= 8 },
+                { label: 'One uppercase letter',   test: /[A-Z]/.test(newPwd) },
+                { label: 'One lowercase letter',   test: /[a-z]/.test(newPwd) },
+                { label: 'One number',             test: /\d/.test(newPwd) },
+                { label: 'One special character',  test: /[!@#$%^&*(),.?":{}|<>]/.test(newPwd) },
               ].map((req, i) => (
                 <div key={i} className="profile__requirement">
-                  <CheckCircle
-                    size={11}
-                    style={{ color: req.test ? 'var(--color-primary)' : 'var(--text-muted)' }}
-                  />
+                  <CheckCircle size={11}
+                    style={{ color: req.test ? 'var(--color-primary)' : 'var(--text-muted)' }} />
                   <span style={{ color: req.test ? 'var(--color-primary)' : 'var(--text-muted)' }}>
                     {req.label}
                   </span>
                 </div>
               ))}
             </div>
-
             <button
               type="submit"
               className="profile__save-btn"
@@ -293,27 +273,95 @@ const Profile = () => {
         {/* Account Info */}
         <div className="profile__card profile__card--info">
           <div className="profile__card-header">
-            <AlertCircle size={18} />
-            <h3>Account Information</h3>
+            <AlertCircle size={18} /><h3>Account Information</h3>
           </div>
           <div className="profile__info-grid">
             <div className="profile__info-item">
               <span className="profile__info-label">Member since</span>
               <span className="profile__info-value">
-                {new Date(user?.created_at).toLocaleDateString('en-IN', {
-                  day: 'numeric', month: 'long', year: 'numeric'
-                })}
+                {user?.created_at
+                  ? new Date(user.created_at).toLocaleDateString('en-IN', {
+                      day: 'numeric', month: 'long', year: 'numeric'
+                    })
+                  : '—'
+                }
               </span>
             </div>
             <div className="profile__info-item">
               <span className="profile__info-label">Account status</span>
-              <span className="profile__info-value profile__info-value--active">Active</span>
+              <span className="profile__info-value profile__info-value--active">
+                Active
+              </span>
             </div>
             <div className="profile__info-item">
               <span className="profile__info-label">Email verified</span>
-              <span className="profile__info-value profile__info-value--active">Yes</span>
+              <span className="profile__info-value profile__info-value--active">
+                Yes
+              </span>
             </div>
           </div>
+        </div>
+
+        {/* Delete Account */}
+        <div className="profile__card profile__card--danger">
+          <div className="profile__card-header">
+            <Trash2 size={18} style={{ color: 'var(--color-error)' }} />
+            <h3 style={{ color: 'var(--color-error)' }}>Delete Account</h3>
+          </div>
+          <p className="profile__danger-text">
+            This will permanently delete your account and all your documents.
+            This action cannot be undone.
+          </p>
+
+          {!confirmDelete ? (
+            <button
+              className="profile__danger-btn"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 size={14} /> Delete My Account
+            </button>
+          ) : (
+            <form onSubmit={handleDeleteAccount} className="profile__form">
+              <div className="profile__field">
+                <label className="profile__label">
+                  Enter your password to confirm deletion
+                </label>
+                <div className="profile__input-wrapper">
+                  <Lock size={15} className="profile__input-icon" />
+                  <input
+                    className="profile__input profile__input--danger"
+                    type={showDelete ? 'text' : 'password'}
+                    value={deletePwd}
+                    onChange={(e) => setDeletePwd(e.target.value)}
+                    placeholder="Your current password"
+                    autoFocus
+                  />
+                  <button type="button" className="profile__eye-btn"
+                          onClick={() => setShowDelete(!showDelete)}>
+                    {showDelete ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button
+                  type="submit"
+                  className="profile__danger-btn"
+                  disabled={deletingAcct || !deletePwd}
+                >
+                  {deletingAcct ? 'Deleting...' : <><Trash2 size={14} /> Yes, Delete Account</>}
+                </button>
+                <button
+                  type="button"
+                  className="profile__save-btn"
+                  onClick={() => { setConfirmDelete(false); setDeletePwd('') }}
+                  style={{ background:'var(--bg-secondary)', color:'var(--text-body)',
+                           boxShadow:'none' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
       </div>

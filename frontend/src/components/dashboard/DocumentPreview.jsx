@@ -60,15 +60,27 @@ const DocumentPreview = ({
   }, [document?.id, refreshTrigger])
 
   // Inject selection listener into iframe after html loads
+  // In DocumentPreview.jsx — replace the iframe script injection useEffect with this:
   useEffect(() => {
     if (!html || !iframeRef.current) return
     const iframe = iframeRef.current
-    const handleLoad = () => {
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
-        if (!iframeDoc) return
-        const script = iframeDoc.createElement('script')
-        script.textContent = `
+
+  const injectScript = () => {
+    try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (!iframeDoc) return
+
+      // Remove any existing injected scripts
+      const existing = iframeDoc.getElementById('texlify-selector')
+      if (existing) existing.remove()
+
+      const script = iframeDoc.createElement('script')
+      script.id = 'texlify-selector'
+      script.textContent = `
+        (function() {
+          if (window.__texlifyInjected) return;
+          window.__texlifyInjected = true;
+
           let selectedElements = [];
           let ctrlHeld = false;
 
@@ -80,7 +92,7 @@ const DocumentPreview = ({
           });
 
           document.addEventListener('click', (e) => {
-            const para = e.target.closest('p, h1, h2, h3, h4, h5, h6, li, td, th');
+            const para = e.target.closest('p,h1,h2,h3,h4,h5,h6,li,td,th');
             if (!para) return;
             if (ctrlHeld) {
               if (para.classList.contains('texlify-selected')) {
@@ -105,19 +117,20 @@ const DocumentPreview = ({
             window.parent.postMessage({
               type: 'texlify-selection',
               texts,
-              rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right }
+              rect: { top: rect.top, left: rect.left,
+                      bottom: rect.bottom, right: rect.right }
             }, '*');
           });
 
           const style = document.createElement('style');
           style.textContent = \`
-            p, h1, h2, h3, h4, h5, h6, li, td, th {
+            p,h1,h2,h3,h4,h5,h6,li,td,th {
               cursor: pointer;
               border-radius: 3px;
               transition: background 0.1s;
             }
-            p:hover, h1:hover, h2:hover, h3:hover, h4:hover,
-            h5:hover, h6:hover, li:hover, td:hover, th:hover {
+            p:hover,h1:hover,h2:hover,h3:hover,h4:hover,
+            h5:hover,h6:hover,li:hover,td:hover,th:hover {
               background: rgba(16,185,129,0.06) !important;
               outline: 1px dashed rgba(16,185,129,0.4);
             }
@@ -127,15 +140,24 @@ const DocumentPreview = ({
             }
           \`;
           document.head.appendChild(style);
-        `
-        iframeDoc.head.appendChild(script)
-      } catch (e) {
-        console.warn('Could not inject iframe script:', e)
-      }
+        })();
+      `
+      iframeDoc.body.appendChild(script)
+    } catch (e) {
+      console.warn('iframe inject error:', e)
     }
-    iframe.addEventListener('load', handleLoad)
-    return () => iframe.removeEventListener('load', handleLoad)
-  }, [html])
+  }
+
+  // Inject after load
+  iframe.addEventListener('load', injectScript)
+
+  // Also try injecting immediately if already loaded
+  if (iframe.contentDocument?.readyState === 'complete') {
+    injectScript()
+  }
+
+  return () => iframe.removeEventListener('load', injectScript)
+}, [html])
 
   // Listen for messages from iframe
   useEffect(() => {
