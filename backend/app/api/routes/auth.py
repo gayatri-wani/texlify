@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.db.database import get_db
 from app.schemas.user import (
     UserRegister, UserLogin, TokenResponse,
@@ -13,7 +14,13 @@ from app.models.user import User
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
+@router.post("/register",
+             response_model=UserResponse,
+             status_code=status.HTTP_201_CREATED)
 def register(data: UserRegister, db: Session = Depends(get_db)):
     return AuthService.register(db, data)
 
@@ -24,7 +31,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh")
-def refresh_token(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+def refresh_token(data: RefreshTokenRequest,
+                  db:   Session = Depends(get_db)):
     return AuthService.refresh_access_token(db, data.refresh_token)
 
 
@@ -35,26 +43,39 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/forgot-password")
-def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(data: ForgotPasswordRequest,
+                    db:   Session = Depends(get_db)):
     AuthService.forgot_password(db, data.email)
     return {"message": "If this email exists, a reset link has been sent"}
 
 
 @router.post("/reset-password")
-def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+def reset_password(data: ResetPasswordRequest,
+                   db:   Session = Depends(get_db)):
     AuthService.reset_password(db, data.token, data.new_password)
     return {"message": "Password reset successfully"}
 
 
 @router.post("/change-password")
 def change_password(
-    data: ChangePasswordRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    data:         ChangePasswordRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
 ):
     AuthService.change_password(
-        db, current_user, data.current_password, data.new_password)
+        db, current_user,
+        data.current_password, data.new_password)
     return {"message": "Password changed successfully"}
+
+
+@router.delete("/delete-account")
+def delete_account(
+    data:         DeleteAccountRequest,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user)
+):
+    AuthService.delete_account(db, current_user, data.password)
+    return {"message": "Account deleted successfully"}
 
 
 @router.get("/me", response_model=UserResponse)
