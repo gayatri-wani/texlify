@@ -46,7 +46,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 def forgot_password(data: ForgotPasswordRequest,
                     db:   Session = Depends(get_db)):
     AuthService.forgot_password(db, data.email)
-    return {"message": "If this email exists, a reset link has been sent"}
+    return {"message": "If this email exists a reset link has been sent"}
 
 
 @router.post("/reset-password")

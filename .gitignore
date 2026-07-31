@@ -1,35 +1,9 @@
-# Python venv/ __pycache__/ *.pyc *.pyo .env *.backup_* uploads/ # Node node_modules/ dist/ .vite/ # OS .DS_Store Thumbs.db
-backend/.env
-
-# Environment
 .env
-.env.local
-.env.production
-
-# Python
 venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.egg-info/
-dist/
-build/
-.pytest_cache/
-
-# Uploads and backups
 uploads/
 *.backup_*
-
-# Database
-*.db
-*.sqlite
-
-# IDE
-.vscode/
-.idea/
-*.swp
-
-# Logs
-*.log
 logs/
+*.db
+.vscode/
