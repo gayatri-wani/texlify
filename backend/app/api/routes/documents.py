@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -15,12 +15,12 @@ from app.agent.executor import DocumentExecutor, backup_document
 import os
 import json
 import time
+import uuid
 from collections import defaultdict
 import threading
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
-# ── Rate limiting ─────────────────────────────────────────────────────────────
 _rate_store = defaultdict(list)
 _rate_lock  = threading.Lock()
 
@@ -44,8 +44,6 @@ def _check_rate_limit(user_id: int, action: str = "command") -> bool:
         return True
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
 class SelectionCommandRequest(BaseModel):
     command_type:    str
     selected_texts:  List[str]
@@ -65,8 +63,6 @@ class UndoRequest(BaseModel):
     backup_filename: str
 
 
-# ── Upload ────────────────────────────────────────────────────────────────────
-
 @router.post("/upload",
              response_model=DocumentResponse,
              status_code=status.HTTP_201_CREATED)
@@ -78,7 +74,7 @@ def upload_document(
     if not _check_rate_limit(current_user.id, "upload"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Upload limit reached. Max {RATE_LIMIT_UPLOADS} uploads per minute."
+            detail=f"Upload limit reached. Max {RATE_LIMIT_UPLOADS} per minute."
         )
     return DocumentService.upload(db, current_user, file)
 
@@ -89,14 +85,11 @@ def upload_image(
     db:           Session    = Depends(get_db),
     current_user: User       = Depends(get_current_user)
 ):
-    allowed_types = [
-        "image/jpeg", "image/png", "image/gif",
-        "image/webp", "image/bmp", "image/tiff"
-    ]
-    if file.content_type not in allowed_types:
+    allowed = ["image/jpeg","image/png","image/gif","image/webp","image/bmp"]
+    if file.content_type not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only image files allowed (JPEG, PNG, GIF, WEBP, BMP)"
+            detail="Only image files allowed"
         )
     contents  = file.file.read()
     file_size = len(contents)
@@ -105,7 +98,6 @@ def upload_image(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Image size exceeds 10MB limit"
         )
-    import uuid
     ext             = os.path.splitext(file.filename)[1].lower()
     stored_filename = f"img_{uuid.uuid4().hex}{ext}"
     img_dir         = os.path.join("uploads", str(current_user.id), "images")
@@ -129,20 +121,12 @@ def serve_image(
     current_user: User = Depends(get_current_user)
 ):
     if current_user.id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+        raise HTTPException(status_code=403, detail="Access denied")
     file_path = os.path.join("uploads", str(user_id), "images", filename)
     if not os.path.exists(file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Image not found"
-        )
+        raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
 
-
-# ── Documents ─────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[DocumentResponse])
 def get_documents(
@@ -161,10 +145,7 @@ def rename_document(
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not request.title or not request.title.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Title cannot be empty"
-        )
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
     document.title = request.title.strip()
     db.commit(); db.refresh(document)
     return {"message": "Document renamed", "title": document.title}
@@ -188,10 +169,7 @@ def download_document(
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not os.path.exists(document.file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found on server"
-        )
+        raise HTTPException(status_code=404, detail="File not found on server")
     return FileResponse(
         path=document.file_path,
         filename=document.original_filename,
@@ -210,18 +188,12 @@ def preview_document(
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not os.path.exists(document.file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found"
-        )
+        raise HTTPException(status_code=404, detail="File not found")
     try:
         html = DocumentService.convert_to_html(document.file_path)
         return HTMLResponse(content=html)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Preview failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
 
 
 @router.get("/{document_id}/backups")
@@ -265,25 +237,16 @@ def undo_command(
     backup_dir  = os.path.dirname(document.file_path)
     backup_path = os.path.join(backup_dir, request.backup_filename)
     if not os.path.exists(backup_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Backup not found: {request.backup_filename}"
-        )
+        raise HTTPException(status_code=404, detail="Backup not found")
     if not request.backup_filename.startswith(
             os.path.basename(document.file_path)):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this backup"
-        )
+        raise HTTPException(status_code=403, detail="Access denied")
     import shutil
     shutil.copy2(backup_path, document.file_path)
     return {"message": "Document restored successfully"}
 
 
-# ── Commands ──────────────────────────────────────────────────────────────────
-
-@router.post("/{document_id}/command",
-             response_model=CommandResponse)
+@router.post("/{document_id}/command", response_model=CommandResponse)
 def execute_command(
     document_id:  int,
     request:      CommandRequest,
@@ -295,7 +258,6 @@ def execute_command(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many commands. Max {RATE_LIMIT_COMMANDS} per minute."
         )
-
     document = DocumentService.get_by_id(db, document_id, current_user)
     history  = CommandHistory(
         user_id=current_user.id,
@@ -353,7 +315,6 @@ def execute_selection_command(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many commands. Max {RATE_LIMIT_COMMANDS} per minute."
         )
-
     document = DocumentService.get_by_id(db, document_id, current_user)
     history  = CommandHistory(
         user_id=current_user.id,
@@ -389,7 +350,7 @@ def execute_selection_command(
         return CommandResponse(
             message=(
                 f"Applied '{request.command_type}' to "
-                f"{len(request.selected_texts)} selected paragraph(s)"
+                f"{len(request.selected_texts)} paragraph(s)"
             ),
             actions_performed=results,
             status="success"
