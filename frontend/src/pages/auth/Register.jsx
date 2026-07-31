@@ -1,85 +1,75 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react'
-import { toast } from 'react-hot-toast'
-import Input from '../../components/ui/Input'
-import Button from '../../components/ui/Button'
+import { useNavigate, Link } from 'react-router-dom'
+import { Mail, Lock, User, Eye, EyeOff, Sparkles, ArrowRight } from 'lucide-react'
 import { authService } from '../../services/authService'
-import './Register.css'
+import useAuthStore from '../../store/authStore'
+import { toast } from 'react-hot-toast'
+import './Login.css'
 
 const Register = () => {
-  const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [form, setForm] = useState({ full_name: '', email: '', password: '' })
-  const [errors, setErrors] = useState({})
+  const [fullName, setFullName]   = useState('')
+  const [email, setEmail]         = useState('')
+  const [password, setPassword]   = useState('')
+  const [confirm, setConfirm]     = useState('')
+  const [showPwd, setShowPwd]     = useState(false)
+  const [loading, setLoading]     = useState(false)
+  const { setAuth }               = useAuthStore()
+  const navigate                  = useNavigate()
 
-  const validate = () => {
-    const newErrors = {}
-    if (!form.full_name.trim())        newErrors.full_name = 'Full name is required'
-    if (!form.email.trim())            newErrors.email = 'Email is required'
-    if (!form.password)                newErrors.password = 'Password is required'
-    else if (form.password.length < 8) newErrors.password = 'Min 8 characters required'
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+  const strength = (pwd) => {
+    let s = 0
+    if (pwd.length >= 8)                     s++
+    if (/[A-Z]/.test(pwd))                   s++
+    if (/[a-z]/.test(pwd))                   s++
+    if (/\d/.test(pwd))                      s++
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) s++
+    return s
   }
 
-  const handleSubmit = async (e) => {
+  const strengthColor = ['','#EF4444','#F59E0B','#EAB308','#10B981','#059669']
+  const strengthLabel = ['','Very Weak','Weak','Fair','Strong','Very Strong']
+  const sc = strength(password)
+
+  const handleRegister = async (e) => {
     e.preventDefault()
-    if (!validate()) return
+    if (!fullName || !email || !password || !confirm) {
+      toast.error('Fill in all fields'); return
+    }
+    if (password !== confirm) { toast.error('Passwords do not match'); return }
+    if (sc < 3) { toast.error('Password is too weak'); return }
     setLoading(true)
     try {
-      await authService.register(form)
-      toast.success('Account created! Please sign in.')
-      navigate('/login')
+      await authService.register({ full_name: fullName, email, password })
+      const data = await authService.login(email, password)
+      setAuth(data.user, data.access_token, data.refresh_token)
+      toast.success(`Welcome to Texlify, ${fullName.split(' ')[0]}!`)
+      navigate('/dashboard')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Registration failed')
+      toast.error(err?.response?.data?.detail || 'Registration failed')
     } finally {
       setLoading(false)
     }
   }
 
-  const getPasswordStrength = () => {
-    const p = form.password
-    if (!p) return null
-    let score = 0
-    if (p.length >= 8)                       score++
-    if (/[A-Z]/.test(p))                     score++
-    if (/[0-9]/.test(p))                     score++
-    if (/[!@#$%^&*(),.?":{}|<>]/.test(p))   score++
-    if (score <= 1) return { label: 'Weak',   cls: 'strength--weak',   width: '25%'  }
-    if (score === 2) return { label: 'Fair',  cls: 'strength--fair',   width: '50%'  }
-    if (score === 3) return { label: 'Good',  cls: 'strength--good',   width: '75%'  }
-    return               { label: 'Strong', cls: 'strength--strong', width: '100%' }
-  }
-
-  const strength = getPasswordStrength()
-
   return (
     <div className="auth-page">
-
       <div className="auth-left">
-        <div className="auth-left__inner">
-          <div className="auth-logo">
-            <div className="auth-logo__icon">T</div>
-            <span className="auth-logo__text">Texlify</span>
-          </div>
-          <h1 className="auth-left__heading">
-            Your AI Document<br />Editor Awaits
-          </h1>
-          <p className="auth-left__subtext">
-            Join thousands of students, researchers and professionals
-            who edit documents 10× faster with Texlify.
+        <div className="auth-left__content">
+          <div className="auth-left__logo"><Sparkles size={28} /></div>
+          <h1 className="auth-left__title">Texlify</h1>
+          <p className="auth-left__subtitle">
+            Create your account and start editing Word documents
+            with the power of AI.
           </p>
-          <div className="register-stats">
+          <div className="auth-left__features">
             {[
-              { value: '50+',  label: 'Document actions' },
-              { value: '10×',  label: 'Faster editing'   },
-              { value: '100%', label: 'Free to start'    },
-            ].map((s, i) => (
-              <div className="register-stat" key={i}>
-                <span className="register-stat__value">{s.value}</span>
-                <span className="register-stat__label">{s.label}</span>
+              'Free to use','No credit card required',
+              'Upload any .docx file',
+              'AI-powered formatting',
+              '100+ Word actions',
+            ].map((f, i) => (
+              <div key={i} className="auth-left__feature">
+                <span className="auth-left__feature-dot" />{f}
               </div>
             ))}
           </div>
@@ -87,84 +77,84 @@ const Register = () => {
       </div>
 
       <div className="auth-right">
-        <div className="auth-card animate-fadeInUp">
+        <div className="auth-form-container">
+          <h2 className="auth-form__title">Create account</h2>
+          <p className="auth-form__subtitle">Join Texlify — it's free</p>
 
-          <div className="auth-card__header">
-            <h2 className="auth-card__title">Create your account</h2>
-            <p className="auth-card__subtitle">Start editing documents with AI — it's free</p>
-          </div>
-
-          <form className="auth-form" onSubmit={handleSubmit}>
-
-            <Input
-              label="Full Name"
-              type="text"
-              placeholder="John Doe"
-              icon={User}
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              error={errors.full_name}
-            />
-
-            <Input
-              label="Email Address"
-              type="email"
-              placeholder="you@example.com"
-              icon={Mail}
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              error={errors.email}
-            />
-
-            <div className="auth-password-group">
-              <Input
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Min 8 chars, uppercase, number, symbol"
-                icon={Lock}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                error={errors.password}
-              />
-
-              {strength && (
-                <div className="strength-bar-wrapper">
-                  <div className="strength-bar-track">
-                    <div
-                      className={`strength-bar-fill ${strength.cls}`}
-                      style={{ width: strength.width }}
-                    />
+          <form className="auth-form" onSubmit={handleRegister}>
+            <div className="auth-field">
+              <label className="auth-label">Full Name</label>
+              <div className="auth-input-wrapper">
+                <User size={16} className="auth-input-icon" />
+                <input className="auth-input" type="text"
+                  placeholder="Your full name" value={fullName}
+                  onChange={(e) => setFullName(e.target.value)} autoFocus />
+              </div>
+            </div>
+            <div className="auth-field">
+              <label className="auth-label">Email address</label>
+              <div className="auth-input-wrapper">
+                <Mail size={16} className="auth-input-icon" />
+                <input className="auth-input" type="email"
+                  placeholder="you@example.com" value={email}
+                  onChange={(e) => setEmail(e.target.value)} />
+              </div>
+            </div>
+            <div className="auth-field">
+              <label className="auth-label">Password</label>
+              <div className="auth-input-wrapper">
+                <Lock size={16} className="auth-input-icon" />
+                <input className="auth-input"
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Min 8 characters" value={password}
+                  onChange={(e) => setPassword(e.target.value)} />
+                <button type="button" className="auth-eye-btn"
+                  onClick={() => setShowPwd(!showPwd)}>
+                  {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              {password && (
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:4 }}>
+                  <div style={{ display:'flex', gap:3, flex:1 }}>
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} style={{
+                        height:4, flex:1, borderRadius:2,
+                        background: i<=sc ? strengthColor[sc] : 'var(--border-light)',
+                        transition:'background 0.3s'
+                      }} />
+                    ))}
                   </div>
-                  <span className={`strength-label ${strength.cls}`}>
-                    {strength.label}
+                  <span style={{ fontSize:11, fontWeight:600, color:strengthColor[sc] }}>
+                    {strengthLabel[sc]}
                   </span>
                 </div>
               )}
-
-              <button
-                type="button"
-                className="auth-toggle-password"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
-                {showPassword ? 'Hide' : 'Show'} password
-              </button>
             </div>
-
-            <Button type="submit" loading={loading} size="md">
-              Create Account
-            </Button>
-
+            <div className="auth-field">
+              <label className="auth-label">Confirm Password</label>
+              <div className="auth-input-wrapper">
+                <Lock size={16} className="auth-input-icon" />
+                <input className="auth-input" type="password"
+                  placeholder="Confirm your password" value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)} />
+              </div>
+              {confirm && password !== confirm && (
+                <p style={{ color:'var(--color-error)', fontSize:12, marginTop:4 }}>
+                  Passwords do not match
+                </p>
+              )}
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? 'Creating account...' : <><span>Create Account</span><ArrowRight size={16} /></>}
+            </button>
           </form>
 
-          <p className="auth-card__footer">
+          <p className="auth-switch">
             Already have an account?{' '}
-            <Link to="/login" className="auth-link">Sign in</Link>
+            <Link to="/login" className="auth-switch-link">Sign in</Link>
           </p>
-
         </div>
       </div>
-
     </div>
   )
 }

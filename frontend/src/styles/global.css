@@ -1,5 +1,4 @@
 @import './variables.css';
-@import './animations.css';
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -7,9 +6,9 @@ html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
   font-family: var(--font-family);
-  font-size: var(--font-md);
-  color: var(--text-body);
-  background: var(--bg-primary);
+  font-size:   var(--font-md);
+  color:       var(--text-body);
+  background:  var(--bg-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   transition: background 0.3s ease, color 0.3s ease;
@@ -17,16 +16,15 @@ body {
 
 a { color: var(--color-primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
-
 button { font-family: var(--font-family); }
 
 input, textarea, select {
   font-family: var(--font-family);
-  color: var(--text-dark);
-  background: var(--bg-card);
+  color:       var(--text-dark);
+  background:  var(--bg-card);
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar       { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--border-medium);
@@ -34,29 +32,25 @@ input, textarea, select {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 
-.animate-spin { animation: spin 1s linear infinite; }
-.animate-fadeInDown { animation: fadeInDown 0.3s ease forwards; }
+.animate-spin         { animation: spin 1s linear infinite; }
+.animate-fadeInDown   { animation: fadeInDown 0.3s ease forwards; }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
-
 @keyframes fadeInDown {
   from { opacity: 0; transform: translateY(-10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes bounce {
   0%, 60%, 100% { transform: translateY(0); }
   30%            { transform: translateY(-6px); }
 }
-
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }

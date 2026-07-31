@@ -1,4 +1,3 @@
-/* ── Light theme (default) ─────────────────────────────────────── */
 :root {
   --color-primary:        #10B981;
   --color-primary-dark:   #059669;
@@ -61,7 +60,6 @@
   --sidebar-width: 220px;
 }
 
-/* ── Dark theme ──────────────────────────────────────────────────── */
 [data-theme="dark"] {
   --color-primary:        #10B981;
   --color-primary-dark:   #059669;
