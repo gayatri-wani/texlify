@@ -16,7 +16,6 @@ ALLOWED_TYPES = [
 
 
 def _convert_image(image):
-    """Convert embedded image to base64 data URI for HTML preview."""
     try:
         with image.open() as img_file:
             image_bytes = img_file.read()
@@ -44,7 +43,6 @@ class DocumentService:
 
     @staticmethod
     def convert_to_html(file_path: str) -> str:
-        """Convert docx to styled HTML for live preview."""
         try:
             style_map = """
                 p[style-name='Heading 1'] => h1:fresh
@@ -80,34 +78,21 @@ class DocumentService:
     max-width: 800px;
     margin: 0 auto;
   }}
-  h1 {{ font-size: 18pt; font-weight: bold; margin: 16px 0 8px; color: #2E74B5; }}
-  h2 {{ font-size: 15pt; font-weight: bold; margin: 14px 0 6px; color: #2E74B5; }}
-  h3 {{ font-size: 13pt; font-weight: bold; margin: 12px 0 4px; color: #1F4E79; }}
+  h1 {{ font-size: 18pt; font-weight: bold; margin: 16px 0 8px; color: #1a1a1a; }}
+  h2 {{ font-size: 15pt; font-weight: bold; margin: 14px 0 6px; color: #1a1a1a; }}
+  h3 {{ font-size: 13pt; font-weight: bold; margin: 12px 0 4px; color: #1a1a1a; }}
   h4, h5, h6 {{ font-size: 12pt; font-weight: bold; margin: 10px 0 4px; }}
   p  {{ margin: 6px 0; text-align: justify; }}
-  table {{
-    border-collapse: collapse;
-    width: 100%;
-    margin: 12px 0;
-  }}
-  td, th {{
-    border: 1px solid #000;
-    padding: 6px 10px;
-    font-size: 11pt;
-  }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+  td, th {{ border: 1px solid #000; padding: 6px 10px; font-size: 11pt; }}
   th {{ background: #f0f0f0; font-weight: bold; }}
   ul, ol {{ margin: 8px 0 8px 24px; }}
   li {{ margin: 3px 0; }}
   strong {{ font-weight: bold; }}
   em {{ font-style: italic; }}
-  img {{
-    max-width: 100%;
-    height: auto;
-    margin: 8px 0;
-    display: block;
-  }}
+  img {{ max-width: 100%; height: auto; margin: 8px 0; display: block; }}
   hr {{ border: none; border-top: 1px solid #000; margin: 12px 0; }}
-  a {{ color: #2E74B5; }}
+  a {{ color: #10B981; }}
 </style>
 </head>
 <body>
@@ -158,19 +143,14 @@ class DocumentService:
             file_size=file_size,
             page_count=DocumentService.get_page_count(file_path),
         )
-        db.add(document)
-        db.commit()
-        db.refresh(document)
+        db.add(document); db.commit(); db.refresh(document)
         return document
 
     @staticmethod
     def get_all(db: Session, user: User) -> list:
         return (
             db.query(Document)
-            .filter(
-                Document.user_id == user.id,
-                Document.is_active == True
-            )
+            .filter(Document.user_id == user.id, Document.is_active == True)
             .order_by(Document.created_at.desc())
             .all()
         )
@@ -180,7 +160,7 @@ class DocumentService:
         document = (
             db.query(Document)
             .filter(
-                Document.id == document_id,
+                Document.id      == document_id,
                 Document.user_id == user.id,
                 Document.is_active == True
             )
