@@ -13,8 +13,8 @@ const Profile = () => {
   const { user, setAuth, logout } = useAuthStore()
   const navigate                  = useNavigate()
 
-  const [fullName, setFullName]       = useState(user?.full_name || '')
-  const [savingName, setSavingName]   = useState(false)
+  const [fullName, setFullName]     = useState(user?.full_name || '')
+  const [savingName, setSavingName] = useState(false)
 
   const [currentPwd, setCurrentPwd]   = useState('')
   const [newPwd, setNewPwd]           = useState('')
@@ -24,12 +24,12 @@ const Profile = () => {
   const [showConfirm, setShowConfirm] = useState(false)
   const [savingPwd, setSavingPwd]     = useState(false)
 
-  const [deletePwd, setDeletePwd]     = useState('')
-  const [showDelete, setShowDelete]   = useState(false)
-  const [deletingAcct, setDeletingAcct] = useState(false)
+  const [deletePwd, setDeletePwd]         = useState('')
+  const [showDeletePwd, setShowDeletePwd] = useState(false)
+  const [deletingAcct, setDeletingAcct]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const passwordStrength = (pwd) => {
+  const strength = (pwd) => {
     let s = 0
     if (pwd.length >= 8)                     s++
     if (/[A-Z]/.test(pwd))                   s++
@@ -39,18 +39,17 @@ const Profile = () => {
     return s
   }
 
-  const strengthLabel = ['','Very Weak','Weak','Fair','Strong','Very Strong']
   const strengthColor = ['','#EF4444','#F59E0B','#EAB308','#10B981','#059669']
-  const pwdScore      = passwordStrength(newPwd)
+  const strengthLabel = ['','Very Weak','Weak','Fair','Strong','Very Strong']
+  const sc = strength(newPwd)
 
   const handleSaveName = async (e) => {
     e.preventDefault()
     if (!fullName.trim()) { toast.error('Name cannot be empty'); return }
-    if (fullName.trim() === user?.full_name) { toast('No changes made'); return }
+    if (fullName.trim() === user?.full_name) { toast('No changes'); return }
     setSavingName(true)
     try {
-      const updatedUser = { ...user, full_name: fullName.trim() }
-      setAuth(updatedUser, null, null)
+      setAuth({ ...user, full_name: fullName.trim() }, null, null)
       toast.success('Name updated!')
     } catch {
       toast.error('Failed to update name')
@@ -65,7 +64,7 @@ const Profile = () => {
       toast.error('Fill in all password fields'); return
     }
     if (newPwd !== confirmPwd) { toast.error('Passwords do not match'); return }
-    if (pwdScore < 3) { toast.error('Password is too weak'); return }
+    if (sc < 3)                { toast.error('Password is too weak');   return }
     setSavingPwd(true)
     try {
       await authService.changePassword(currentPwd, newPwd)
@@ -106,7 +105,7 @@ const Profile = () => {
 
       <div className="profile__content">
 
-        {/* Avatar */}
+        {/* Avatar card */}
         <div className="profile__card profile__card--avatar">
           <div className="profile__avatar">
             {user?.full_name?.charAt(0).toUpperCase()}
@@ -130,25 +129,17 @@ const Profile = () => {
               <label className="profile__label">Full Name</label>
               <div className="profile__input-wrapper">
                 <User size={15} className="profile__input-icon" />
-                <input
-                  className="profile__input"
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Your full name"
-                />
+                <input className="profile__input" type="text"
+                  value={fullName} onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your full name" />
               </div>
             </div>
             <div className="profile__field">
               <label className="profile__label">Email Address</label>
               <div className="profile__input-wrapper profile__input-wrapper--disabled">
                 <Mail size={15} className="profile__input-icon" />
-                <input
-                  className="profile__input"
-                  type="email"
-                  value={user?.email || ''}
-                  disabled
-                />
+                <input className="profile__input" type="email"
+                  value={user?.email || ''} disabled />
               </div>
               <p className="profile__hint">Email cannot be changed</p>
             </div>
@@ -168,15 +159,12 @@ const Profile = () => {
               <label className="profile__label">Current Password</label>
               <div className="profile__input-wrapper">
                 <Lock size={15} className="profile__input-icon" />
-                <input
-                  className="profile__input"
+                <input className="profile__input"
                   type={showCurrent ? 'text' : 'password'}
-                  value={currentPwd}
-                  onChange={(e) => setCurrentPwd(e.target.value)}
-                  placeholder="Enter current password"
-                />
+                  value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
+                  placeholder="Current password" />
                 <button type="button" className="profile__eye-btn"
-                        onClick={() => setShowCurrent(!showCurrent)}>
+                  onClick={() => setShowCurrent(!showCurrent)}>
                   {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -185,32 +173,28 @@ const Profile = () => {
               <label className="profile__label">New Password</label>
               <div className="profile__input-wrapper">
                 <Lock size={15} className="profile__input-icon" />
-                <input
-                  className="profile__input"
+                <input className="profile__input"
                   type={showNew ? 'text' : 'password'}
-                  value={newPwd}
-                  onChange={(e) => setNewPwd(e.target.value)}
-                  placeholder="Enter new password"
-                />
+                  value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
+                  placeholder="New password" />
                 <button type="button" className="profile__eye-btn"
-                        onClick={() => setShowNew(!showNew)}>
+                  onClick={() => setShowNew(!showNew)}>
                   {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               {newPwd && (
-                <div className="profile__strength">
-                  <div className="profile__strength-bar">
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6 }}>
+                  <div style={{ display:'flex', gap:3, flex:1 }}>
                     {[1,2,3,4,5].map(i => (
-                      <div key={i} className="profile__strength-segment"
-                           style={{
-                             background: i <= pwdScore
-                               ? strengthColor[pwdScore]
-                               : 'var(--border-light)'
-                           }} />
+                      <div key={i} style={{
+                        height:4, flex:1, borderRadius:2,
+                        background: i<=sc ? strengthColor[sc] : 'var(--border-light)',
+                        transition:'background 0.3s'
+                      }} />
                     ))}
                   </div>
-                  <span style={{ color: strengthColor[pwdScore] }}>
-                    {strengthLabel[pwdScore]}
+                  <span style={{ fontSize:11, fontWeight:600, color:strengthColor[sc] }}>
+                    {strengthLabel[sc]}
                   </span>
                 </div>
               )}
@@ -219,15 +203,12 @@ const Profile = () => {
               <label className="profile__label">Confirm New Password</label>
               <div className="profile__input-wrapper">
                 <Lock size={15} className="profile__input-icon" />
-                <input
-                  className="profile__input"
+                <input className="profile__input"
                   type={showConfirm ? 'text' : 'password'}
-                  value={confirmPwd}
-                  onChange={(e) => setConfirmPwd(e.target.value)}
-                  placeholder="Confirm new password"
-                />
+                  value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                  placeholder="Confirm new password" />
                 <button type="button" className="profile__eye-btn"
-                        onClick={() => setShowConfirm(!showConfirm)}>
+                  onClick={() => setShowConfirm(!showConfirm)}>
                   {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
@@ -245,26 +226,23 @@ const Profile = () => {
             <div className="profile__requirements">
               <p className="profile__requirements-title">Password must have:</p>
               {[
-                { label: 'At least 8 characters',  test: newPwd.length >= 8 },
-                { label: 'One uppercase letter',   test: /[A-Z]/.test(newPwd) },
-                { label: 'One lowercase letter',   test: /[a-z]/.test(newPwd) },
-                { label: 'One number',             test: /\d/.test(newPwd) },
-                { label: 'One special character',  test: /[!@#$%^&*(),.?":{}|<>]/.test(newPwd) },
-              ].map((req, i) => (
+                { label:'At least 8 characters',  test: newPwd.length >= 8 },
+                { label:'One uppercase letter',   test: /[A-Z]/.test(newPwd) },
+                { label:'One lowercase letter',   test: /[a-z]/.test(newPwd) },
+                { label:'One number',             test: /\d/.test(newPwd) },
+                { label:'One special character',  test: /[!@#$%^&*(),.?":{}|<>]/.test(newPwd) },
+              ].map((r, i) => (
                 <div key={i} className="profile__requirement">
                   <CheckCircle size={11}
-                    style={{ color: req.test ? 'var(--color-primary)' : 'var(--text-muted)' }} />
-                  <span style={{ color: req.test ? 'var(--color-primary)' : 'var(--text-muted)' }}>
-                    {req.label}
+                    style={{ color: r.test ? 'var(--color-primary)' : 'var(--text-muted)' }} />
+                  <span style={{ color: r.test ? 'var(--color-primary)' : 'var(--text-muted)' }}>
+                    {r.label}
                   </span>
                 </div>
               ))}
             </div>
-            <button
-              type="submit"
-              className="profile__save-btn"
-              disabled={savingPwd || newPwd !== confirmPwd || pwdScore < 3}
-            >
+            <button type="submit" className="profile__save-btn"
+              disabled={savingPwd || newPwd !== confirmPwd || sc < 3}>
               {savingPwd ? 'Changing...' : <><Lock size={14} /> Change Password</>}
             </button>
           </form>
@@ -281,23 +259,18 @@ const Profile = () => {
               <span className="profile__info-value">
                 {user?.created_at
                   ? new Date(user.created_at).toLocaleDateString('en-IN', {
-                      day: 'numeric', month: 'long', year: 'numeric'
+                      day:'numeric', month:'long', year:'numeric'
                     })
-                  : '—'
-                }
+                  : '—'}
               </span>
             </div>
             <div className="profile__info-item">
               <span className="profile__info-label">Account status</span>
-              <span className="profile__info-value profile__info-value--active">
-                Active
-              </span>
+              <span className="profile__info-value profile__info-value--active">Active</span>
             </div>
             <div className="profile__info-item">
               <span className="profile__info-label">Email verified</span>
-              <span className="profile__info-value profile__info-value--active">
-                Yes
-              </span>
+              <span className="profile__info-value profile__info-value--active">Yes</span>
             </div>
           </div>
         </div>
@@ -305,19 +278,16 @@ const Profile = () => {
         {/* Delete Account */}
         <div className="profile__card profile__card--danger">
           <div className="profile__card-header">
-            <Trash2 size={18} style={{ color: 'var(--color-error)' }} />
-            <h3 style={{ color: 'var(--color-error)' }}>Delete Account</h3>
+            <Trash2 size={18} style={{ color:'var(--color-error)' }} />
+            <h3 style={{ color:'var(--color-error)' }}>Delete Account</h3>
           </div>
           <p className="profile__danger-text">
             This will permanently delete your account and all your documents.
             This action cannot be undone.
           </p>
-
           {!confirmDelete ? (
-            <button
-              className="profile__danger-btn"
-              onClick={() => setConfirmDelete(true)}
-            >
+            <button className="profile__danger-btn"
+              onClick={() => setConfirmDelete(true)}>
               <Trash2 size={14} /> Delete My Account
             </button>
           ) : (
@@ -328,35 +298,27 @@ const Profile = () => {
                 </label>
                 <div className="profile__input-wrapper">
                   <Lock size={15} className="profile__input-icon" />
-                  <input
-                    className="profile__input profile__input--danger"
-                    type={showDelete ? 'text' : 'password'}
+                  <input className="profile__input"
+                    type={showDeletePwd ? 'text' : 'password'}
                     value={deletePwd}
                     onChange={(e) => setDeletePwd(e.target.value)}
-                    placeholder="Your current password"
-                    autoFocus
-                  />
+                    placeholder="Your current password" autoFocus />
                   <button type="button" className="profile__eye-btn"
-                          onClick={() => setShowDelete(!showDelete)}>
-                    {showDelete ? <EyeOff size={14} /> : <Eye size={14} />}
+                    onClick={() => setShowDeletePwd(!showDeletePwd)}>
+                    {showDeletePwd ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
               <div style={{ display:'flex', gap:8 }}>
-                <button
-                  type="submit"
-                  className="profile__danger-btn"
-                  disabled={deletingAcct || !deletePwd}
-                >
+                <button type="submit" className="profile__danger-btn"
+                  disabled={deletingAcct || !deletePwd}>
                   {deletingAcct ? 'Deleting...' : <><Trash2 size={14} /> Yes, Delete Account</>}
                 </button>
-                <button
-                  type="button"
+                <button type="button"
                   className="profile__save-btn"
-                  onClick={() => { setConfirmDelete(false); setDeletePwd('') }}
                   style={{ background:'var(--bg-secondary)', color:'var(--text-body)',
                            boxShadow:'none' }}
-                >
+                  onClick={() => { setConfirmDelete(false); setDeletePwd('') }}>
                   Cancel
                 </button>
               </div>

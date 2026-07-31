@@ -1,114 +1,79 @@
-import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import {
-  FileText, LogOut, ChevronLeft, ChevronRight,
-  Sparkles, User, Moon, Sun
-} from 'lucide-react'
+import { LogOut, User, Moon, Sun, FileText, Sparkles } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import { authService } from '../../services/authService'
 import { useDarkMode } from '../../hooks/useDarkMode'
 import { toast } from 'react-hot-toast'
 import './Sidebar.css'
 
-const NAV_ITEMS = [
-  { icon: FileText, label: 'Documents', path: '/dashboard' },
-  { icon: User,     label: 'Profile',   path: '/profile'   },
-]
-
 const Sidebar = () => {
-  const [collapsed, setCollapsed] = useState(false)
-  const { user, logout }          = useAuthStore()
-  const navigate                  = useNavigate()
-  const location                  = useLocation()
-  const { isDark, toggle }        = useDarkMode()
+  const { user, logout }    = useAuthStore()
+  const { isDark, toggle }  = useDarkMode()
+  const navigate            = useNavigate()
+  const location            = useLocation()
 
   const handleLogout = async () => {
     try {
       await authService.logout()
-    } catch { /* ignore */ }
+    } catch { }
     logout()
     navigate('/login')
-    toast.success('Logged out successfully')
+    toast.success('Logged out')
   }
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
-
+    <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar__logo">
         <div className="sidebar__logo-icon">
           <Sparkles size={18} />
         </div>
-        {!collapsed && (
-          <div className="sidebar__logo-text">
-            <span className="sidebar__logo-name">Texlify</span>
-            <span className="sidebar__logo-tag">AI Editor</span>
-          </div>
-        )}
+        <span className="sidebar__logo-text">Texlify</span>
       </div>
 
-      {/* Nav items */}
+      {/* Nav */}
       <nav className="sidebar__nav">
-        {NAV_ITEMS.map((item) => {
-          const Icon    = item.icon
-          const active  = location.pathname === item.path
-          return (
-            <button
-              key={item.path}
-              className={`sidebar__nav-item ${active ? 'sidebar__nav-item--active' : ''}`}
-              onClick={() => navigate(item.path)}
-              title={collapsed ? item.label : ''}
-            >
-              <Icon size={18} />
-              {!collapsed && <span>{item.label}</span>}
-            </button>
-          )
-        })}
+        <button
+          className={`sidebar__nav-item ${location.pathname === '/dashboard' ? 'sidebar__nav-item--active' : ''}`}
+          onClick={() => navigate('/dashboard')}
+        >
+          <FileText size={16} />
+          <span>Documents</span>
+        </button>
+        <button
+          className={`sidebar__nav-item ${location.pathname === '/profile' ? 'sidebar__nav-item--active' : ''}`}
+          onClick={() => navigate('/profile')}
+        >
+          <User size={16} />
+          <span>Profile</span>
+        </button>
       </nav>
 
       {/* Bottom */}
       <div className="sidebar__bottom">
-
         {/* Dark mode toggle */}
-        <button
-          className="sidebar__dark-toggle"
-          onClick={toggle}
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDark ? <Sun size={16} /> : <Moon size={16} />}
-          {!collapsed && <span>{isDark ? 'Light mode' : 'Dark mode'}</span>}
+        <button className="sidebar__dark-toggle" onClick={toggle}>
+          {isDark ? <Sun size={15} /> : <Moon size={15} />}
+          <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
 
         {/* User info */}
-        {!collapsed && (
-          <div className="sidebar__user">
-            <div className="sidebar__user-avatar">
-              {user?.full_name?.charAt(0).toUpperCase()}
-            </div>
-            <div className="sidebar__user-info">
-              <p className="sidebar__user-name">{user?.full_name}</p>
-              <p className="sidebar__user-email">{user?.email}</p>
-            </div>
+        <div className="sidebar__user">
+          <div className="sidebar__user-avatar">
+            {user?.full_name?.charAt(0).toUpperCase()}
           </div>
-        )}
+          <div className="sidebar__user-info">
+            <p className="sidebar__user-name">
+              {user?.full_name?.split(' ')[0]}
+            </p>
+            <p className="sidebar__user-email">{user?.email}</p>
+          </div>
+        </div>
 
         {/* Logout */}
-        <button
-          className="sidebar__logout"
-          onClick={handleLogout}
-          title={collapsed ? 'Logout' : ''}
-        >
-          <LogOut size={16} />
-          {!collapsed && <span>Logout</span>}
-        </button>
-
-        {/* Collapse toggle */}
-        <button
-          className="sidebar__collapse"
-          onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        <button className="sidebar__logout" onClick={handleLogout}>
+          <LogOut size={15} />
+          <span>Logout</span>
         </button>
       </div>
     </aside>

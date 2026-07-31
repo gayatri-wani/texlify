@@ -1,53 +1,20 @@
 import { useState } from 'react'
 import {
   Bold, Italic, Underline, Strikethrough,
-  Highlighter, Type, AlignLeft, Heading1,
-  Send, X, ChevronDown, AlignCenter,
-  AlignJustify, Trash2
+  Highlighter, Type, AlignCenter, Heading1,
+  Send, X, ChevronDown
 } from 'lucide-react'
 import './SelectionToolbar.css'
 
 const QUICK_ACTIONS = [
-  { label: 'Bold',          icon: Bold,          command_type: 'bold' },
-  { label: 'Italic',        icon: Italic,         command_type: 'italic' },
-  { label: 'Underline',     icon: Underline,      command_type: 'underline' },
-  { label: 'Strike',        icon: Strikethrough,  command_type: 'strikethrough' },
-  {
-    label: 'Highlight',
-    icon: Highlighter,
-    command_type: 'highlight',
-    extra: { highlight_color: 'yellow' }
-  },
-  {
-    label: 'Heading 1',
-    icon: Heading1,
-    command_type: 'heading',
-    extra: { make_heading: 1 }
-  },
-  {
-    label: 'Center',
-    icon: AlignCenter,
-    command_type: 'align',
-    extra: { alignment: 'center' }
-  },
-  {
-    label: 'Justify',
-    icon: AlignJustify,
-    command_type: 'align',
-    extra: { alignment: 'justify' }
-  },
-  { label: 'UPPER',         icon: Type,           command_type: 'uppercase' },
-  { label: 'lower',         icon: Type,           command_type: 'lowercase' },
-  { label: 'Remove Fmt',    icon: Trash2,         command_type: 'remove_formatting' },
-]
-
-const HIGHLIGHT_COLORS = [
-  { label: 'Yellow',    value: 'yellow',    hex: '#FEF08A' },
-  { label: 'Green',     value: 'green',     hex: '#BBF7D0' },
-  { label: 'Cyan',      value: 'cyan',      hex: '#A5F3FC' },
-  { label: 'Pink',      value: 'pink',      hex: '#FBCFE8' },
-  { label: 'Blue',      value: 'blue',      hex: '#BFDBFE' },
-  { label: 'Red',       value: 'red',       hex: '#FECACA' },
+  { label: 'Bold',        icon: Bold,          type: 'bold' },
+  { label: 'Italic',      icon: Italic,         type: 'italic' },
+  { label: 'Underline',   icon: Underline,      type: 'underline' },
+  { label: 'Strike',      icon: Strikethrough,  type: 'strikethrough' },
+  { label: 'Highlight',   icon: Highlighter,    type: 'highlight',   extra: { highlight_color: 'yellow' } },
+  { label: 'H1',          icon: Heading1,       type: 'heading',     extra: { make_heading: 1 } },
+  { label: 'UPPER',       icon: Type,           type: 'uppercase' },
+  { label: 'Center',      icon: AlignCenter,    type: 'align',       extra: { alignment: 'center' } },
 ]
 
 const SelectionToolbar = ({
@@ -57,47 +24,32 @@ const SelectionToolbar = ({
   onClose,
   loading
 }) => {
-  const [customPrompt, setCustomPrompt]   = useState('')
-  const [showCustom, setShowCustom]       = useState(false)
-  const [showHighlights, setShowHighlights] = useState(false)
+  const [customCmd, setCustomCmd]   = useState('')
+  const [showCustom, setShowCustom] = useState(false)
 
-  if (!selectedTexts || selectedTexts.length === 0) return null
+  if (!selectedTexts?.length) return null
 
-  const handleQuickAction = (action) => {
-    const params = {
-      selected_texts: selectedTexts,
-      command_type:   action.command_type,
-      ...(action.extra || {})
-    }
-    onApply({ type: 'apply_to_selection', params })
-  }
-
-  const handleHighlightColor = (colorValue) => {
+  const handleQuick = (action) => {
     onApply({
       type: 'apply_to_selection',
       params: {
-        selected_texts:  selectedTexts,
-        command_type:    'highlight',
-        highlight_color: colorValue,
+        selected_texts: selectedTexts,
+        command_type:   action.type,
+        ...(action.extra || {})
       }
     })
-    setShowHighlights(false)
   }
 
-  const handleCustomPrompt = (e) => {
+  const handleCustom = (e) => {
     e.preventDefault()
-    if (!customPrompt.trim()) return
-    const selectionContext = selectedTexts
-      .slice(0, 3)
-      .map(t => `"${t.slice(0, 50)}"`)
-      .join(', ')
-    const fullCommand = `For the selected text ${selectionContext} — ${customPrompt}`
+    if (!customCmd.trim()) return
+    const ctx = selectedTexts.slice(0, 2).map(t => `"${t.slice(0,50)}"`).join(', ')
     onApply({
-      type:           'custom_command',
-      command:        fullCommand,
+      type:          'custom_command',
+      command:       `For selected text ${ctx}: ${customCmd}`,
       selected_texts: selectedTexts
     })
-    setCustomPrompt('')
+    setCustomCmd('')
     setShowCustom(false)
   }
 
@@ -116,106 +68,54 @@ const SelectionToolbar = ({
         </button>
       </div>
 
-      {/* Quick action buttons */}
+      {/* Quick actions */}
       <div className="selection-toolbar__actions">
-        {QUICK_ACTIONS.map((action, idx) => (
-          action.command_type === 'highlight' ? (
-            <div key={idx} style={{ position: 'relative' }}>
-              <button
-                className="selection-toolbar__btn"
-                onClick={() => setShowHighlights(!showHighlights)}
-                disabled={loading}
-                title="Highlight color"
-              >
-                <action.icon size={13} />
-                <span>{action.label}</span>
-              </button>
-              {showHighlights && (
-                <div className="selection-toolbar__color-picker">
-                  {HIGHLIGHT_COLORS.map(c => (
-                    <button
-                      key={c.value}
-                      className="selection-toolbar__color-swatch"
-                      style={{ background: c.hex }}
-                      onClick={() => handleHighlightColor(c.value)}
-                      title={c.label}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              key={idx}
-              className="selection-toolbar__btn"
-              onClick={() => handleQuickAction(action)}
-              disabled={loading}
-              title={action.label}
-            >
-              <action.icon size={13} />
-              <span>{action.label}</span>
-            </button>
-          )
-        ))}
-      </div>
-
-      {/* Font size quick row */}
-      <div className="selection-toolbar__font-row">
-        <span className="selection-toolbar__font-label">Font size:</span>
-        {[10, 11, 12, 14, 16, 18, 24].map(size => (
+        {QUICK_ACTIONS.map((a) => (
           <button
-            key={size}
-            className="selection-toolbar__font-btn"
-            onClick={() => onApply({
-              type: 'apply_to_selection',
-              params: {
-                selected_texts: selectedTexts,
-                command_type:   'font',
-                font_size:      size,
-              }
-            })}
+            key={a.type + (a.extra?.make_heading || '')}
+            className="selection-toolbar__btn"
+            onClick={() => handleQuick(a)}
             disabled={loading}
+            title={a.label}
           >
-            {size}
+            <a.icon size={13} />
+            <span>{a.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Custom prompt */}
+      {/* Custom toggle */}
       <button
         className="selection-toolbar__custom-toggle"
         onClick={() => setShowCustom(!showCustom)}
       >
-        <ChevronDown
-          size={12}
-          style={{
-            transform: showCustom ? 'rotate(180deg)' : 'none',
-            transition: '0.2s'
-          }}
-        />
+        <ChevronDown size={12}
+          style={{ transform: showCustom ? 'rotate(180deg)' : 'none',
+                   transition: '0.2s' }} />
         Custom command
       </button>
 
+      {/* Custom input */}
       {showCustom && (
-        <form className="selection-toolbar__custom" onSubmit={handleCustomPrompt}>
+        <form className="selection-toolbar__custom" onSubmit={handleCustom}>
           <input
             className="selection-toolbar__input"
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-            placeholder="e.g. make font Times New Roman, color red..."
+            value={customCmd}
+            onChange={(e) => setCustomCmd(e.target.value)}
+            placeholder="e.g. make font size 14, color red..."
             autoFocus
           />
           <button
             type="submit"
             className="selection-toolbar__send"
-            disabled={!customPrompt.trim() || loading}
+            disabled={!customCmd.trim() || loading}
           >
             <Send size={12} />
           </button>
         </form>
       )}
 
-      {/* Selected text preview */}
+      {/* Preview */}
       <div className="selection-toolbar__preview">
         {selectedTexts.slice(0, 2).map((t, i) => (
           <div key={i} className="selection-toolbar__preview-item">
@@ -224,7 +124,7 @@ const SelectionToolbar = ({
         ))}
         {selectedTexts.length > 2 && (
           <div className="selection-toolbar__preview-more">
-            +{selectedTexts.length - 2} more selected
+            +{selectedTexts.length - 2} more
           </div>
         )}
       </div>

@@ -2,25 +2,23 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
+  padding: 10px var(--space-sm);
+  background: var(--bg-secondary);
+  border: 1.5px solid transparent;
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-light);
-  background: var(--bg-card);
   cursor: pointer;
-  transition: var(--transition-base);
+  transition: var(--transition-fast);
   position: relative;
 }
 
 .doc-card:hover {
-  border-color: var(--border-medium);
   background: var(--bg-overlay);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-card);
+  border-color: var(--border-light);
 }
 
 .doc-card--selected {
+  background: rgba(16, 185, 129, 0.08);
   border-color: var(--color-primary);
-  background: rgba(16, 185, 129, 0.06);
 }
 
 .doc-card__icon {
@@ -36,11 +34,10 @@
 }
 
 .doc-card--selected .doc-card__icon {
-  background: var(--gradient-primary);
-  color: white;
+  background: rgba(16, 185, 129, 0.2);
 }
 
-.doc-card__info {
+.doc-card__body {
   flex: 1;
   min-width: 0;
 }
@@ -52,49 +49,48 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 2px;
 }
 
 .doc-card__meta {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  margin-top: 2px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
 }
 
-.doc-card__meta span {
+.doc-card__meta-item {
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: var(--font-xs);
+  font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
-/* Rename form */
-.doc-card__rename-form {
+.doc-card__meta-dot {
+  width: 2px;
+  height: 2px;
+  background: var(--text-muted);
+  border-radius: 50%;
+}
+
+/* Rename */
+.doc-card__rename {
   display: flex;
   align-items: center;
   gap: 4px;
-  width: 100%;
 }
 
 .doc-card__rename-input {
   flex: 1;
-  padding: 3px 7px;
-  background: var(--bg-secondary);
+  padding: 3px 6px;
+  background: var(--bg-card);
   border: 1.5px solid var(--color-primary);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   color: var(--text-dark);
   outline: none;
-  font-family: var(--font-family);
-  min-width: 0;
-}
-
-.doc-card__rename-actions {
-  display: flex;
-  gap: 3px;
-  flex-shrink: 0;
 }
 
 .doc-card__rename-btn {
@@ -107,20 +103,21 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: var(--transition-fast);
+  flex-shrink: 0;
 }
 
-.doc-card__rename-btn--confirm {
-  background: rgba(16, 185, 129, 0.15);
+.doc-card__rename-btn--save {
+  background: rgba(16, 185, 129, 0.12);
   color: var(--color-primary);
 }
 
-.doc-card__rename-btn--confirm:hover {
+.doc-card__rename-btn--save:hover {
   background: var(--color-primary);
   color: white;
 }
 
 .doc-card__rename-btn--cancel {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.08);
   color: var(--color-error);
 }
 
@@ -129,7 +126,7 @@
   color: white;
 }
 
-/* Action buttons (show on hover) */
+/* Actions */
 .doc-card__actions {
   display: flex;
   gap: 4px;
@@ -139,15 +136,14 @@
 }
 
 .doc-card:hover .doc-card__actions { opacity: 1; }
-.doc-card--selected .doc-card__actions { opacity: 1; }
 
 .doc-card__action-btn {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-secondary);
+  background: transparent;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
@@ -158,11 +154,11 @@
 .doc-card__action-btn:hover {
   background: var(--bg-overlay);
   color: var(--color-primary);
-  border-color: var(--border-medium);
+  border-color: var(--color-primary);
 }
 
 .doc-card__action-btn--danger:hover {
   background: rgba(239, 68, 68, 0.1);
   color: var(--color-error);
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: var(--color-error);
 }
