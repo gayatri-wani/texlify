@@ -1,52 +1,51 @@
 import { useState } from 'react'
-import {
-  FileText, Trash2, Edit3, Download, Check, X, Clock
-} from 'lucide-react'
+import { FileText, Trash2, Edit2, Check, X, Calendar } from 'lucide-react'
+import { documentService } from '../../services/documentService'
+import { toast } from 'react-hot-toast'
 import './DocumentCard.css'
 
-const DocumentCard = ({ document, onSelect, onDelete, onRename, isSelected }) => {
+const DocumentCard = ({ document, onSelect, onDelete, isSelected }) => {
   const [editing, setEditing]   = useState(false)
-  const [newTitle, setNewTitle] = useState(document.title)
+  const [title, setTitle]       = useState(document.title)
   const [saving, setSaving]     = useState(false)
 
-  const formatSize = (bytes) => {
-    if (bytes < 1024)       return `${bytes} B`
-    if (bytes < 1024*1024)  return `${(bytes/1024).toFixed(1)} KB`
-    return `${(bytes/(1024*1024)).toFixed(1)} MB`
-  }
-
-  const formatDate = (dateStr) => {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric'
-    })
-  }
-
-  const handleRenameSubmit = async (e) => {
-    e.preventDefault()
-    if (!newTitle.trim() || newTitle.trim() === document.title) {
+  const handleRename = async () => {
+    if (!title.trim() || title === document.title) {
       setEditing(false)
-      setNewTitle(document.title)
+      setTitle(document.title)
       return
     }
     setSaving(true)
     try {
-      await onRename(document.id, newTitle.trim())
+      await documentService.rename(document.id, title.trim())
+      toast.success('Renamed!')
       setEditing(false)
     } catch {
-      setNewTitle(document.title)
+      toast.error('Rename failed')
+      setTitle(document.title)
       setEditing(false)
     } finally {
       setSaving(false)
     }
   }
 
-  const handleRenameCancel = () => {
-    setNewTitle(document.title)
-    setEditing(false)
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter')  handleRename()
+    if (e.key === 'Escape') { setEditing(false); setTitle(document.title) }
   }
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') handleRenameCancel()
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    })
+  }
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '—'
+    if (bytes < 1024)        return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   }
 
   return (
@@ -58,48 +57,56 @@ const DocumentCard = ({ document, onSelect, onDelete, onRename, isSelected }) =>
         <FileText size={18} />
       </div>
 
-      <div className="doc-card__info">
+      <div className="doc-card__body">
         {editing ? (
-          <form
-            className="doc-card__rename-form"
-            onSubmit={handleRenameSubmit}
+          <div
+            className="doc-card__rename"
             onClick={(e) => e.stopPropagation()}
           >
             <input
               className="doc-card__rename-input"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               onKeyDown={handleKeyDown}
               autoFocus
-              disabled={saving}
             />
-            <div className="doc-card__rename-actions">
-              <button
-                type="submit"
-                className="doc-card__rename-btn doc-card__rename-btn--confirm"
-                disabled={saving}
-                title="Save"
-              >
-                <Check size={12} />
-              </button>
-              <button
-                type="button"
-                className="doc-card__rename-btn doc-card__rename-btn--cancel"
-                onClick={handleRenameCancel}
-                title="Cancel"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          </form>
+            <button
+              className="doc-card__rename-btn doc-card__rename-btn--save"
+              onClick={handleRename}
+              disabled={saving}
+            >
+              <Check size={12} />
+            </button>
+            <button
+              className="doc-card__rename-btn doc-card__rename-btn--cancel"
+              onClick={(e) => {
+                e.stopPropagation()
+                setEditing(false)
+                setTitle(document.title)
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
         ) : (
-          <p className="doc-card__title">{document.title}</p>
+          <p className="doc-card__title">{title}</p>
         )}
         <div className="doc-card__meta">
-          <span><Clock size={10} /> {formatDate(document.created_at)}</span>
-          <span>{formatSize(document.file_size)}</span>
-          {document.page_count > 0 && (
-            <span>{document.page_count}p</span>
+          <span className="doc-card__meta-item">
+            <Calendar size={10} />
+            {formatDate(document.created_at)}
+          </span>
+          <span className="doc-card__meta-dot" />
+          <span className="doc-card__meta-item">
+            {formatSize(document.file_size)}
+          </span>
+          {document.page_count > 1 && (
+            <>
+              <span className="doc-card__meta-dot" />
+              <span className="doc-card__meta-item">
+                {document.page_count}p
+              </span>
+            </>
           )}
         </div>
       </div>
@@ -110,17 +117,17 @@ const DocumentCard = ({ document, onSelect, onDelete, onRename, isSelected }) =>
       >
         <button
           className="doc-card__action-btn"
-          onClick={() => { setEditing(true); setNewTitle(document.title) }}
+          onClick={() => setEditing(true)}
           title="Rename"
         >
-          <Edit3 size={13} />
+          <Edit2 size={12} />
         </button>
         <button
           className="doc-card__action-btn doc-card__action-btn--danger"
           onClick={() => onDelete(document.id)}
           title="Delete"
         >
-          <Trash2 size={13} />
+          <Trash2 size={12} />
         </button>
       </div>
     </div>

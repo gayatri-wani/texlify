@@ -1,14 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   RefreshCw, Download, ZoomIn, ZoomOut,
-  FileText, MousePointer, Hash
+  FileText, MousePointer
 } from 'lucide-react'
 import { documentService } from '../../services/documentService'
 import SelectionToolbar from './SelectionToolbar'
 import './DocumentPreview.css'
 
 const DocumentPreview = ({
-  document, refreshTrigger, onDownload, onSelectionCommand
+  document,
+  refreshTrigger,
+  onDownload,
+  onSelectionCommand
 }) => {
   const [html, setHtml]                   = useState('')
   const [loading, setLoading]             = useState(false)
@@ -17,26 +20,15 @@ const DocumentPreview = ({
   const [toolbarPos, setToolbarPos]       = useState({ x: 0, y: 0 })
   const [showToolbar, setShowToolbar]     = useState(false)
   const [cmdLoading, setCmdLoading]       = useState(false)
-  const [wordCount, setWordCount]         = useState(null)
-  const [scrollPos, setScrollPos]         = useState(0)
   const iframeRef                         = useRef()
   const containerRef                      = useRef()
-  const areaRef                           = useRef()
 
   const loadPreview = async () => {
     if (!document) return
-    // Save scroll position before refresh
-    if (areaRef.current) setScrollPos(areaRef.current.scrollTop)
     setLoading(true)
     try {
-      const htmlContent = await documentService.getPreview(document.id)
-      setHtml(htmlContent)
-      // Extract word count from HTML
-      const tempDiv = window.document.createElement('div')
-      tempDiv.innerHTML = htmlContent
-      const text  = tempDiv.textContent || tempDiv.innerText || ''
-      const words = text.trim().split(/\s+/).filter(w => w.length > 0).length
-      setWordCount(words)
+      const content = await documentService.getPreview(document.id)
+      setHtml(content)
     } catch {
       setHtml('<div style="padding:40px;color:#666;font-family:sans-serif;">Preview failed. Download the document to see changes.</div>')
     } finally {
@@ -44,152 +36,122 @@ const DocumentPreview = ({
     }
   }
 
-  // Restore scroll position after content loads
-  useEffect(() => {
-    if (!loading && areaRef.current && scrollPos > 0) {
-      setTimeout(() => {
-        if (areaRef.current) areaRef.current.scrollTop = scrollPos
-      }, 100)
-    }
-  }, [loading, html])
-
   useEffect(() => {
     loadPreview()
     setShowToolbar(false)
     setSelectedTexts([])
   }, [document?.id, refreshTrigger])
 
-  // Inject selection listener into iframe after html loads
-  // In DocumentPreview.jsx — replace the iframe script injection useEffect with this:
+  // Inject selection script into iframe
   useEffect(() => {
     if (!html || !iframeRef.current) return
     const iframe = iframeRef.current
 
-  const injectScript = () => {
-    try {
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-      if (!iframeDoc) return
-
-      // Remove any existing injected scripts
-      const existing = iframeDoc.getElementById('texlify-selector')
-      if (existing) existing.remove()
-
-      const script = iframeDoc.createElement('script')
-      script.id = 'texlify-selector'
-      script.textContent = `
-        (function() {
-          if (window.__texlifyInjected) return;
-          window.__texlifyInjected = true;
-
-          let selectedElements = [];
-          let ctrlHeld = false;
-
-          document.addEventListener('keydown', (e) => {
-            if (e.key === 'Control' || e.key === 'Meta') ctrlHeld = true;
-          });
-          document.addEventListener('keyup', (e) => {
-            if (e.key === 'Control' || e.key === 'Meta') ctrlHeld = false;
-          });
-
-          document.addEventListener('click', (e) => {
-            const para = e.target.closest('p,h1,h2,h3,h4,h5,h6,li,td,th');
-            if (!para) return;
-            if (ctrlHeld) {
-              if (para.classList.contains('texlify-selected')) {
-                para.classList.remove('texlify-selected');
-                selectedElements = selectedElements.filter(el => el !== para);
+    const inject = () => {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document
+        if (!doc) return
+        const existing = doc.getElementById('texlify-sel-script')
+        if (existing) existing.remove()
+        const script = doc.createElement('script')
+        script.id = 'texlify-sel-script'
+        script.textContent = `
+          (function() {
+            if (window.__texlifyInjected) return;
+            window.__texlifyInjected = true;
+            let selected = [];
+            let ctrlHeld = false;
+            document.addEventListener('keydown', e => {
+              if (e.key==='Control'||e.key==='Meta') ctrlHeld=true;
+            });
+            document.addEventListener('keyup', e => {
+              if (e.key==='Control'||e.key==='Meta') ctrlHeld=false;
+            });
+            document.addEventListener('click', e => {
+              const el = e.target.closest('p,h1,h2,h3,h4,h5,h6,li,td,th');
+              if (!el) return;
+              if (ctrlHeld) {
+                if (el.classList.contains('tx-sel')) {
+                  el.classList.remove('tx-sel');
+                  selected = selected.filter(x => x !== el);
+                } else {
+                  el.classList.add('tx-sel');
+                  selected.push(el);
+                }
               } else {
-                para.classList.add('texlify-selected');
-                selectedElements.push(para);
+                document.querySelectorAll('.tx-sel').forEach(x => x.classList.remove('tx-sel'));
+                selected = [];
+                el.classList.add('tx-sel');
+                selected = [el];
               }
-            } else {
-              document.querySelectorAll('.texlify-selected').forEach(el => {
-                el.classList.remove('texlify-selected');
-              });
-              selectedElements = [];
-              para.classList.add('texlify-selected');
-              selectedElements = [para];
-            }
-            const texts = selectedElements
-              .map(el => el.textContent.trim())
-              .filter(Boolean);
-            const rect = para.getBoundingClientRect();
-            window.parent.postMessage({
-              type: 'texlify-selection',
-              texts,
-              rect: { top: rect.top, left: rect.left,
-                      bottom: rect.bottom, right: rect.right }
-            }, '*');
-          });
-
-          const style = document.createElement('style');
-          style.textContent = \`
-            p,h1,h2,h3,h4,h5,h6,li,td,th {
-              cursor: pointer;
-              border-radius: 3px;
-              transition: background 0.1s;
-            }
-            p:hover,h1:hover,h2:hover,h3:hover,h4:hover,
-            h5:hover,h6:hover,li:hover,td:hover,th:hover {
-              background: rgba(16,185,129,0.06) !important;
-              outline: 1px dashed rgba(16,185,129,0.4);
-            }
-            .texlify-selected {
-              background: rgba(16,185,129,0.15) !important;
-              outline: 2px solid rgba(16,185,129,0.6) !important;
-            }
-          \`;
-          document.head.appendChild(style);
-        })();
-      `
-      iframeDoc.body.appendChild(script)
-    } catch (e) {
-      console.warn('iframe inject error:', e)
+              const texts = selected.map(x=>x.textContent.trim()).filter(Boolean);
+              const rect  = el.getBoundingClientRect();
+              window.parent.postMessage({
+                type:'texlify-selection', texts,
+                rect:{top:rect.top,left:rect.left,bottom:rect.bottom,right:rect.right}
+              },'*');
+            });
+            const style = document.createElement('style');
+            style.textContent = \`
+              p,h1,h2,h3,h4,h5,h6,li,td,th {
+                cursor:pointer; border-radius:3px; transition:background 0.1s;
+              }
+              p:hover,h1:hover,h2:hover,h3:hover,h4:hover,h5:hover,
+              h6:hover,li:hover,td:hover,th:hover {
+                background:rgba(16,185,129,0.06)!important;
+                outline:1px dashed rgba(16,185,129,0.4);
+              }
+              .tx-sel {
+                background:rgba(16,185,129,0.18)!important;
+                outline:2px solid rgba(16,185,129,0.65)!important;
+              }
+            \`;
+            document.head.appendChild(style);
+          })();
+        `
+        doc.body.appendChild(script)
+      } catch (e) {
+        console.warn('iframe inject:', e)
+      }
     }
-  }
 
-  // Inject after load
-  iframe.addEventListener('load', injectScript)
+    iframe.addEventListener('load', inject)
+    if (iframe.contentDocument?.readyState === 'complete') inject()
+    return () => iframe.removeEventListener('load', inject)
+  }, [html])
 
-  // Also try injecting immediately if already loaded
-  if (iframe.contentDocument?.readyState === 'complete') {
-    injectScript()
-  }
-
-  return () => iframe.removeEventListener('load', injectScript)
-}, [html])
-
-  // Listen for messages from iframe
+  // Listen for selection messages from iframe
   useEffect(() => {
-    const handleMessage = (e) => {
+    const onMsg = (e) => {
       if (e.data?.type !== 'texlify-selection') return
       const { texts, rect } = e.data
-      if (!texts || texts.length === 0) {
+      if (!texts?.length) {
         setShowToolbar(false); setSelectedTexts([]); return
       }
       setSelectedTexts(texts)
-      const iframeRect = iframeRef.current?.getBoundingClientRect()
+      const iframe     = iframeRef.current
+      const iframeRect = iframe?.getBoundingClientRect()
       if (!iframeRect) return
       const scale = zoom / 100
-      const x = Math.min(iframeRect.left + rect.left * scale, window.innerWidth - 360)
+      const x = Math.min(iframeRect.left + rect.left * scale, window.innerWidth - 340)
       const y = Math.max(iframeRect.top  + rect.top  * scale - 10, 10)
       setToolbarPos({ x, y })
       setShowToolbar(true)
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
   }, [zoom])
 
-  // Close toolbar when clicking outside
+  // Close toolbar on outside click
   useEffect(() => {
-    const handleClickOutside = (e) => {
+    const handler = (e) => {
       if (!e.target.closest('.selection-toolbar') &&
           !e.target.closest('iframe')) {
         setShowToolbar(false)
       }
     }
-    window.document.addEventListener('click', handleClickOutside)
-    return () => window.document.removeEventListener('click', handleClickOutside)
+    window.document.addEventListener('click', handler)
+    return () => window.document.removeEventListener('click', handler)
   }, [])
 
   const handleSelectionAction = async (action) => {
@@ -230,78 +192,54 @@ const DocumentPreview = ({
             <FileText size={14} />
             <span>{document.title}</span>
           </div>
-          {wordCount !== null && (
-            <div className="preview__word-count">
-              <Hash size={11} />
-              {wordCount.toLocaleString()} words
+          {selectedTexts.length > 0 && (
+            <div className="preview__sel-badge">
+              <MousePointer size={10} />
+              {selectedTexts.length} selected
             </div>
           )}
         </div>
         <div className="preview__toolbar-right">
-          <button
-            className="preview__tool-btn"
-            onClick={() => setZoom(z => Math.max(z - 10, 50))}
-            title="Zoom out"
-          >
+          <button className="preview__tool-btn"
+            onClick={() => setZoom(z => Math.max(z - 10, 50))}>
             <ZoomOut size={14} />
           </button>
           <span className="preview__zoom-label">{zoom}%</span>
-          <button
-            className="preview__tool-btn"
-            onClick={() => setZoom(z => Math.min(z + 10, 200))}
-            title="Zoom in"
-          >
+          <button className="preview__tool-btn"
+            onClick={() => setZoom(z => Math.min(z + 10, 200))}>
             <ZoomIn size={14} />
           </button>
-          <button
-            className="preview__tool-btn"
-            onClick={loadPreview}
-            title="Refresh preview"
-          >
-            <RefreshCw size={14} className={loading ? 'preview__spin' : ''} />
+          <button className="preview__tool-btn" onClick={loadPreview}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button
-            className="preview__download-btn"
-            onClick={() => onDownload(document)}
-          >
-            <Download size={14} />
-            Download
+          <button className="preview__download-btn"
+            onClick={() => onDownload(document)}>
+            <Download size={14} /> Download
           </button>
         </div>
       </div>
 
-      {/* Selection hint */}
-      {!showToolbar && (
-        <div className="preview__hint">
-          <MousePointer size={11} />
-          Click any paragraph to select · Ctrl+Click for multiple selection
-        </div>
-      )}
+      {/* Hint */}
+      <div className="preview__hint">
+        <MousePointer size={11} />
+        Click paragraph to select · Ctrl+Click for multi-select
+      </div>
 
       {/* Preview area */}
-      <div className="preview__area" ref={areaRef}>
+      <div className="preview__area">
         {loading && (
           <div className="preview__loading">
-            <div className="preview__loading-skeleton">
-              <div className="preview__skeleton-line preview__skeleton-line--title" />
-              <div className="preview__skeleton-line" />
-              <div className="preview__skeleton-line" />
-              <div className="preview__skeleton-line preview__skeleton-line--short" />
-              <div className="preview__skeleton-line preview__skeleton-line--title" />
-              <div className="preview__skeleton-line" />
-              <div className="preview__skeleton-line" />
-            </div>
+            <div className="preview__spinner" />
+            <span>Updating preview...</span>
           </div>
         )}
-        {html && !loading && (
+        {html && (
           <div className="preview__paper-wrapper">
-            <div
-              className="preview__paper"
+            <div className="preview__paper"
               style={{
                 transform: `scale(${zoom / 100})`,
                 transformOrigin: 'top center'
-              }}
-            >
+              }}>
               <iframe
                 ref={iframeRef}
                 srcDoc={html}
