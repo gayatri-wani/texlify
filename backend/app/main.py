@@ -1,16 +1,14 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from app.api.routes import auth, documents
-from app.db.database import engine, Base
 from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.core.security_middleware import SecurityMiddleware
+from app.db.database import engine, Base
 
-# Setup logging first
 setup_logging()
 logger = logging.getLogger("texlify")
 
@@ -20,6 +18,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting Texlify v{settings.APP_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     Base.metadata.create_all(bind=engine)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     logger.info("Database tables verified")
     yield
     logger.info("Texlify shutting down")
@@ -34,12 +33,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Security middleware (order matters) ───────────────────────────────────────
-
-# 1. Security headers + brute force protection
+# Middleware
 app.add_middleware(SecurityMiddleware)
-
-# 2. CORS — only allow your frontend domain
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
@@ -50,43 +45,30 @@ app.add_middleware(
     max_age=3600,
 )
 
-# ── Global exception handlers ─────────────────────────────────────────────────
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(
-        f"Unhandled exception on {request.method} {request.url.path}: "
-        f"{type(exc).__name__}: {exc}"
+        f"Unhandled exception on {request.method} "
+        f"{request.url.path}: {type(exc).__name__}: {exc}"
     )
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "An internal error occurred. Please try again."
-        }
+        content={"detail": "An internal error occurred. Please try again."}
     )
 
 
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"detail": "Resource not found"}
-    )
+# Import routers AFTER app is created
+from app.api.routes.auth import router as auth_router
+from app.api.routes.documents import router as documents_router
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-app.include_router(auth,      prefix="/api/v1")
-app.include_router(documents, prefix="/api/v1")
+app.include_router(auth_router,      prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
 
 
 @app.get("/")
 def root():
-    return {
-        "app":     settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "status":  "running"
-    }
+    return {"app": settings.APP_NAME, "version": settings.APP_VERSION}
 
 
 @app.get("/health")
