@@ -54,6 +54,11 @@ class DocumentService:
                 p[style-name='List Paragraph'] => li:fresh
                 p[style-name='List Bullet']    => li.bullet:fresh
                 p[style-name='List Number']    => li.numbered:fresh
+                u => u
+                b => strong
+                i => em
+                strike => s
+                del => s
             """
             with open(file_path, "rb") as f:
                 result = mammoth.convert_to_html(
@@ -68,6 +73,7 @@ class DocumentService:
 <meta charset="UTF-8">
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+
   body {{
     font-family: 'Times New Roman', Times, serif;
     font-size: 12pt;
@@ -78,33 +84,171 @@ class DocumentService:
     max-width: 800px;
     margin: 0 auto;
   }}
-  h1 {{ font-size: 18pt; font-weight: bold; margin: 16px 0 8px; color: #1a1a1a; }}
-  h2 {{ font-size: 15pt; font-weight: bold; margin: 14px 0 6px; color: #1a1a1a; }}
-  h3 {{ font-size: 13pt; font-weight: bold; margin: 12px 0 4px; color: #1a1a1a; }}
-  h4, h5, h6 {{ font-size: 12pt; font-weight: bold; margin: 10px 0 4px; }}
-  p  {{ margin: 6px 0; text-align: justify; }}
-  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
-  td, th {{ border: 1px solid #000; padding: 6px 10px; font-size: 11pt; }}
-  th {{ background: #f0f0f0; font-weight: bold; }}
-  ul, ol {{ margin: 8px 0 8px 24px; }}
-  li {{ margin: 3px 0; }}
-  strong {{ font-weight: bold; }}
-  em {{ font-style: italic; }}
-  img {{ max-width: 100%; height: auto; margin: 8px 0; display: block; }}
-  hr {{ border: none; border-top: 1px solid #000; margin: 12px 0; }}
-  a {{ color: #10B981; }}
+
+  h1 {{
+    font-size: 18pt;
+    font-weight: bold;
+    margin: 16px 0 8px;
+    color: #1a1a1a;
+  }}
+
+  h2 {{
+    font-size: 15pt;
+    font-weight: bold;
+    margin: 14px 0 6px;
+    color: #1a1a1a;
+  }}
+
+  h3 {{
+    font-size: 13pt;
+    font-weight: bold;
+    margin: 12px 0 4px;
+    color: #1a1a1a;
+  }}
+
+  h4, h5, h6 {{
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 10px 0 4px;
+    color: #1a1a1a;
+  }}
+
+  p {{
+    margin: 6px 0;
+    text-align: justify;
+  }}
+
+  /* Underline */
+  u {{
+    text-decoration: underline;
+  }}
+
+  /* Bold */
+  strong, b {{
+    font-weight: bold;
+  }}
+
+  /* Italic */
+  em, i {{
+    font-style: italic;
+  }}
+
+  /* Strikethrough */
+  s, strike, del {{
+    text-decoration: line-through;
+  }}
+
+  /* Tables */
+  table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+  }}
+
+  td, th {{
+    border: 1px solid #000;
+    padding: 6px 10px;
+    font-size: 11pt;
+  }}
+
+  th {{
+    background: #f0f0f0;
+    font-weight: bold;
+  }}
+
+  /* Lists */
+  ul, ol {{
+    margin: 8px 0 8px 24px;
+  }}
+
+  li {{
+    margin: 3px 0;
+    text-align: left;
+  }}
+
+  /* Images */
+  img {{
+    max-width: 100%;
+    height: auto;
+    margin: 8px 0;
+    display: block;
+  }}
+
+  /* Horizontal rule */
+  hr {{
+    border: none;
+    border-top: 1px solid #000;
+    margin: 12px 0;
+  }}
+
+  /* Hyperlinks */
+  a {{
+    color: #10B981;
+    text-decoration: underline;
+  }}
+
+  /* Superscript and subscript */
+  sup {{
+    font-size: 75%;
+    vertical-align: super;
+  }}
+
+  sub {{
+    font-size: 75%;
+    vertical-align: sub;
+  }}
+
+  /* Code / preformatted */
+  pre, code {{
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10pt;
+    background: #f4f4f4;
+    padding: 2px 4px;
+    border-radius: 3px;
+  }}
+
+  pre {{
+    padding: 12px;
+    margin: 8px 0;
+    overflow-x: auto;
+  }}
+
+  /* Blockquote */
+  blockquote {{
+    border-left: 3px solid #10B981;
+    padding-left: 16px;
+    margin: 8px 0 8px 16px;
+    color: #555;
+    font-style: italic;
+  }}
+
+  /* Caption text */
+  .caption {{
+    font-size: 10pt;
+    color: #666;
+    text-align: center;
+    font-style: italic;
+    margin-top: 4px;
+  }}
+
+  /* Note: highlight, text color, text effects, page numbers,
+     headers/footers, margins, watermarks, and multi-column
+     layouts are Word-only features visible after download.
+     The preview shows content and basic structure only. */
+
 </style>
 </head>
 <body>
 {html_body}
 </body>
 </html>"""
+
         except Exception as e:
             return f"""<!DOCTYPE html>
 <html>
 <body style="font-family:sans-serif;padding:40px;color:#666;">
   <p>Preview unavailable: {str(e)}</p>
-  <p>Download the document to see changes.</p>
+  <p>Download the document to see the full formatting.</p>
 </body>
 </html>"""
 
@@ -150,7 +294,10 @@ class DocumentService:
     def get_all(db: Session, user: User) -> list:
         return (
             db.query(Document)
-            .filter(Document.user_id == user.id, Document.is_active == True)
+            .filter(
+                Document.user_id   == user.id,
+                Document.is_active == True
+            )
             .order_by(Document.created_at.desc())
             .all()
         )
@@ -160,8 +307,8 @@ class DocumentService:
         document = (
             db.query(Document)
             .filter(
-                Document.id      == document_id,
-                Document.user_id == user.id,
+                Document.id        == document_id,
+                Document.user_id   == user.id,
                 Document.is_active == True
             )
             .first()
