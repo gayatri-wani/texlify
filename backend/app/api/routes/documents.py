@@ -8,22 +8,20 @@ from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.document import Document
 from app.models.command_history import CommandHistory, CommandStatus
-from app.services.document_service import DocumentService
+from app.services.document_service import DocumentService, _safe_path, _cleanup_old_backups
 from app.schemas.document import DocumentResponse, CommandRequest, CommandResponse
 from app.agent.parser import parse_command
 from app.agent.executor import DocumentExecutor, backup_document
-import os
-import json
-import time
-import uuid
+from app.core.config import settings
+import os, json, time, uuid, logging
 from collections import defaultdict
 import threading
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+logger = logging.getLogger("texlify.documents")
 
 _rate_store = defaultdict(list)
 _rate_lock  = threading.Lock()
-
 RATE_LIMIT_COMMANDS   = 30
 RATE_LIMIT_WINDOW_SEC = 60
 RATE_LIMIT_UPLOADS    = 10
@@ -34,8 +32,7 @@ def _check_rate_limit(user_id: int, action: str = "command") -> bool:
     now   = time.time()
     limit = RATE_LIMIT_COMMANDS if action == "command" else RATE_LIMIT_UPLOADS
     with _rate_lock:
-        timestamps = [t for t in _rate_store[key]
-                      if now - t < RATE_LIMIT_WINDOW_SEC]
+        timestamps = [t for t in _rate_store[key] if now - t < RATE_LIMIT_WINDOW_SEC]
         if len(timestamps) >= limit:
             _rate_store[key] = timestamps
             return False
@@ -63,8 +60,7 @@ class UndoRequest(BaseModel):
     backup_filename: str
 
 
-@router.post("/upload",
-             response_model=DocumentResponse,
+@router.post("/upload", response_model=DocumentResponse,
              status_code=status.HTTP_201_CREATED)
 def upload_document(
     file:         UploadFile = File(...),
@@ -87,29 +83,24 @@ def upload_image(
 ):
     allowed = ["image/jpeg","image/png","image/gif","image/webp","image/bmp"]
     if file.content_type not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only image files allowed"
-        )
+        raise HTTPException(status_code=400, detail="Only image files allowed")
     contents  = file.file.read()
     file_size = len(contents)
     if file_size > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Image size exceeds 10MB limit"
-        )
+        raise HTTPException(status_code=400, detail="Image size exceeds 10MB")
     ext             = os.path.splitext(file.filename)[1].lower()
     stored_filename = f"img_{uuid.uuid4().hex}{ext}"
     img_dir         = os.path.join("uploads", str(current_user.id), "images")
     os.makedirs(img_dir, exist_ok=True)
     file_path = os.path.join(img_dir, stored_filename)
+    _safe_path(file_path, img_dir)
     with open(file_path, "wb") as f:
         f.write(contents)
     return {
-        "filename":     stored_filename,
-        "server_path":  file_path,
-        "url":          f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
-        "size":         file_size,
+        "filename":    stored_filename,
+        "server_path": file_path,
+        "url":         f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
+        "size":        file_size,
         "content_type": file.content_type
     }
 
@@ -122,7 +113,10 @@ def serve_image(
 ):
     if current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    file_path = os.path.join("uploads", str(user_id), "images", filename)
+    img_dir   = os.path.join("uploads", str(user_id), "images")
+    file_path = os.path.join(img_dir, filename)
+    # Path traversal guard
+    _safe_path(file_path, img_dir)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(file_path)
@@ -213,7 +207,7 @@ def get_backups(
                 backups.append({
                     "filename":  f,
                     "timestamp": backup_time,
-                    "display":   (
+                    "display": (
                         f"{backup_time[:4]}-{backup_time[4:6]}-"
                         f"{backup_time[6:8]} "
                         f"{backup_time[9:11]}:{backup_time[11:13]}:"
@@ -236,6 +230,10 @@ def undo_command(
     document    = DocumentService.get_by_id(db, document_id, current_user)
     backup_dir  = os.path.dirname(document.file_path)
     backup_path = os.path.join(backup_dir, request.backup_filename)
+
+    # Path traversal guard
+    _safe_path(backup_path, backup_dir)
+
     if not os.path.exists(backup_path):
         raise HTTPException(status_code=404, detail="Backup not found")
     if not request.backup_filename.startswith(
@@ -270,6 +268,13 @@ def execute_command(
     try:
         backup_path             = backup_document(document.file_path)
         history.backup_filename = os.path.basename(backup_path)
+
+        # Auto-cleanup old backups — keep only last N
+        _cleanup_old_backups(
+            document.file_path,
+            keep=settings.MAX_BACKUPS_PER_DOCUMENT
+        )
+
         parsed = parse_command(request.command)
         if parsed.get("error"):
             history.status        = CommandStatus.failed
@@ -281,9 +286,17 @@ def execute_command(
             )
         executor = DocumentExecutor(document.file_path)
         results  = executor.execute_actions(parsed.get("actions", []))
+        elapsed  = int((time.time() - start_time) * 1000)
+
+        if elapsed > 5000:
+            logger.warning(
+                "Slow command: user=%s doc=%s elapsed=%dms cmd=%s",
+                current_user.id, document_id, elapsed, request.command[:60]
+            )
+
         history.parsed_actions    = json.dumps(parsed.get("actions", []))
         history.status            = CommandStatus.success
-        history.execution_time_ms = int((time.time() - start_time) * 1000)
+        history.execution_time_ms = elapsed
         db.commit()
         return CommandResponse(
             message=parsed.get("summary", "Command executed successfully"),
@@ -296,6 +309,8 @@ def execute_command(
         history.status        = CommandStatus.failed
         history.error_message = str(e)
         db.commit()
+        logger.error("Command execution failed: user=%s doc=%s err=%s",
+                     current_user.id, document_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Execution failed: {str(e)}"
@@ -330,6 +345,7 @@ def execute_selection_command(
     try:
         backup_path             = backup_document(document.file_path)
         history.backup_filename = os.path.basename(backup_path)
+        _cleanup_old_backups(document.file_path, keep=settings.MAX_BACKUPS_PER_DOCUMENT)
         executor = DocumentExecutor(document.file_path)
         results  = executor.execute_actions([{
             "type": "apply_to_selection",

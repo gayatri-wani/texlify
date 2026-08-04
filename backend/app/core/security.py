@@ -32,8 +32,7 @@ def create_access_token(data: dict) -> str:
         "type": "access",
         "iat":  datetime.utcnow(),
     })
-    return jwt.encode(
-        payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(data: dict) -> str:
@@ -44,16 +43,13 @@ def create_refresh_token(data: dict) -> str:
         "type": "refresh",
         "iat":  datetime.utcnow(),
     })
-    return jwt.encode(
-        payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def verify_token(token: str, token_type: str = "access") -> Optional[dict]:
     try:
         payload = jwt.decode(
-            token, settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
-        )
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         if payload.get("type") != token_type:
             return None
         return payload
@@ -63,3 +59,8 @@ def verify_token(token: str, token_type: str = "access") -> Optional[dict]:
 
 def generate_random_token(length: int = 64) -> str:
     return secrets.token_urlsafe(length)
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """SHA-256 hash of a reset token for safe DB storage."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
