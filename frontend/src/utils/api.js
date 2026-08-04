@@ -3,6 +3,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: 'http://127.0.0.1:8000/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  timeout: 30000,   // 30 second timeout on ALL requests
 })
 
 api.interceptors.request.use((config) => {
@@ -15,6 +16,13 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
+
+    if (error.code === 'ECONNABORTED') {
+      return Promise.reject(
+        new Error('Request timed out. The server took too long to respond.')
+      )
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
       try {

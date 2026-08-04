@@ -1,4 +1,5 @@
 import smtplib
+import hashlib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -9,7 +10,7 @@ from app.schemas.user import UserRegister
 from app.core.security import (
     hash_password, verify_password,
     create_access_token, create_refresh_token,
-    generate_random_token, verify_token
+    generate_random_token, verify_token, hash_reset_token
 )
 from app.core.config import settings
 from datetime import datetime, timedelta
@@ -19,9 +20,7 @@ logger = logging.getLogger("texlify.auth")
 
 def send_reset_email(to_email: str, reset_token: str, full_name: str):
     try:
-        reset_link = (
-            f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-        )
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
         msg            = MIMEMultipart("alternative")
         msg["Subject"] = "Texlify — Reset Your Password"
         msg["From"]    = f"Texlify <{settings.SMTP_EMAIL}>"
@@ -47,8 +46,7 @@ def send_reset_email(to_email: str, reset_token: str, full_name: str):
             </a>
         </div>
         <p style="color:#6B7280;font-size:13px">
-            Or copy: <a href="{reset_link}"
-                       style="color:#10B981">{reset_link}</a>
+            Or copy: <a href="{reset_link}" style="color:#10B981">{reset_link}</a>
         </p>
         <p style="color:#9CA3AF;font-size:12px">
             If you did not request this, ignore this email.
@@ -59,13 +57,13 @@ def send_reset_email(to_email: str, reset_token: str, full_name: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_EMAIL, to_email, msg.as_string())
-        logger.info(f"Reset email sent to {to_email}")
+        logger.info("Reset email sent to %s", to_email)
         return True
     except smtplib.SMTPAuthenticationError:
         logger.error("SMTP auth failed — check SMTP credentials in .env")
         return False
     except Exception as e:
-        logger.error(f"Email failed: {type(e).__name__}: {e}")
+        logger.error("Email failed: %s: %s", type(e).__name__, e)
         return False
 
 
@@ -101,10 +99,10 @@ def send_welcome_email(to_email: str, full_name: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_EMAIL, to_email, msg.as_string())
-        logger.info(f"Welcome email sent to {to_email}")
+        logger.info("Welcome email sent to %s", to_email)
         return True
     except Exception as e:
-        logger.error(f"Welcome email failed: {e}")
+        logger.error("Welcome email failed: %s", e)
         return False
 
 
@@ -134,7 +132,7 @@ class AuthService:
             is_active=True
         )
         db.add(user); db.commit(); db.refresh(user)
-        logger.info(f"New user registered: {user.email}")
+        logger.info("New user registered: %s", user.email)
         try:
             send_welcome_email(user.email, user.full_name)
         except Exception:
@@ -146,7 +144,7 @@ class AuthService:
         email = email.lower().strip()
         user  = db.query(User).filter(User.email == email).first()
         if not user or not verify_password(password, user.hashed_password):
-            logger.warning(f"Failed login: {email}")
+            logger.warning("Failed login: %s", email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -156,7 +154,7 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is deactivated"
             )
-        logger.info(f"User logged in: {email}")
+        logger.info("User logged in: %s", email)
         return {
             "access_token":  create_access_token({"sub": str(user.id)}),
             "refresh_token": create_refresh_token({"sub": str(user.id)}),
@@ -186,36 +184,24 @@ class AuthService:
         }
 
     @staticmethod
-    def verify_email(db: Session, token: str) -> bool:
-        user = db.query(User).filter(
-            User.verification_token == token
-        ).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification token"
-            )
-        user.is_verified        = True
-        user.verification_token = None
-        db.commit()
-        return True
-
-    @staticmethod
     def forgot_password(db: Session, email: str) -> str:
         user = db.query(User).filter(
             User.email == email.lower().strip()
         ).first()
         if not user:
             return "If this email exists a reset link has been sent"
-        reset_token               = generate_random_token()
-        user.reset_password_token = reset_token
+
+        raw_token               = generate_random_token()
+        hashed                  = hash_reset_token(raw_token)
+        user.reset_password_token = hashed            # store HASH, not raw
         user.reset_token_expires  = datetime.utcnow() + timedelta(hours=1)
         db.commit()
-        email_sent = send_reset_email(user.email, reset_token, user.full_name)
+
+        email_sent = send_reset_email(user.email, raw_token, user.full_name)
         if not email_sent:
             logger.info(
-                f"Manual reset: {settings.FRONTEND_URL}"
-                f"/reset-password?token={reset_token}"
+                "Manual reset link: %s/reset-password?token=%s",
+                settings.FRONTEND_URL, raw_token
             )
         return "If this email exists a reset link has been sent"
 
@@ -226,8 +212,10 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password must be at least 8 characters"
             )
+        # Hash the incoming token and compare to stored hash
+        hashed = hash_reset_token(token)
         user = db.query(User).filter(
-            User.reset_password_token == token,
+            User.reset_password_token == hashed,
             User.reset_token_expires  > datetime.utcnow()
         ).first()
         if not user:
@@ -239,6 +227,7 @@ class AuthService:
         user.reset_password_token = None
         user.reset_token_expires  = None
         db.commit()
+        logger.info("Password reset for user %s", user.email)
         return True
 
     @staticmethod
