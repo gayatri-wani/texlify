@@ -10,10 +10,13 @@ import UndoPanel from '../../components/dashboard/UndoPanel'
 import { documentService } from '../../services/documentService'
 import useAuthStore from '../../store/authStore'
 import './Dashboard.css'
+import { FileText, Plus, X, ChevronLeft, ChevronRight, History, Image } from 'lucide-react'
+import ImageInsertModal from '../../components/dashboard/ImageInsertModal'
 
 const Dashboard = () => {
   const { user }                          = useAuthStore()
   const [documents, setDocuments]         = useState([])
+  const [showImageModal, setShowImageModal] = useState(false)
   const [selectedDoc, setSelectedDoc]     = useState(null)
   const [uploading, setUploading]         = useState(false)
   const [loadingDocs, setLoadingDocs]     = useState(true)
@@ -92,6 +95,10 @@ const Dashboard = () => {
       setCmdLoading(false)
     }
   }
+
+  const handleImageInserted = useCallback(() => {
+  setPreviewKey(k => k + 1)
+}, [])
 
   const handleCommandSuccess = useCallback(() => {
     setPreviewKey(k => k + 1)

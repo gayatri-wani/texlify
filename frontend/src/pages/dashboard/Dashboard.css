@@ -296,3 +296,23 @@
   .dashboard__chat-panel,
   .dashboard__preview-panel { height: 480px; }
 }
+.dashboard__image-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--bg-card);
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-base);
+  white-space: nowrap;
+}
+
+.dashboard__image-btn:hover {
+  background: rgba(16,185,129,0.08);
+  transform: translateY(-1px);
+}
