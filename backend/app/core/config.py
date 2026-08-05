@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     BCRYPT_ROUNDS:               int  = 12
     SENTRY_DSN:                  str  = ""
     LOG_FORMAT:                  str  = "json"
+    REDIS_URL:                   str  = ""
+    PREVIEW_CACHE_TTL:           int  = 300   # seconds
 
     @property
     def allowed_origins_list(self) -> List[str]:
