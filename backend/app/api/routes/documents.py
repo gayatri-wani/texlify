@@ -13,6 +13,7 @@ from app.schemas.document import DocumentResponse, CommandRequest, CommandRespon
 from app.agent.parser import parse_command
 from app.agent.executor import DocumentExecutor, backup_document
 from app.core.config import settings
+from app.core.cache import cache_get, cache_set, cache_delete_pattern
 import os, json, time, uuid, logging
 from collections import defaultdict
 import threading
@@ -39,6 +40,11 @@ def _check_rate_limit(user_id: int, action: str = "command") -> bool:
         timestamps.append(now)
         _rate_store[key] = timestamps
         return True
+
+
+def _invalidate_preview_cache(document_id: int):
+    """Call this after any command modifies a document."""
+    cache_delete_pattern(f"preview:{document_id}:*")
 
 
 class SelectionCommandRequest(BaseModel):
@@ -115,7 +121,6 @@ def serve_image(
         raise HTTPException(status_code=403, detail="Access denied")
     img_dir   = os.path.join("uploads", str(user_id), "images")
     file_path = os.path.join(img_dir, filename)
-    # Path traversal guard
     _safe_path(file_path, img_dir)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
@@ -151,6 +156,7 @@ def delete_document(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user)
 ):
+    _invalidate_preview_cache(document_id)
     DocumentService.delete(db, document_id, current_user)
     return {"message": "Document deleted successfully"}
 
@@ -183,8 +189,20 @@ def preview_document(
     document = DocumentService.get_by_id(db, document_id, current_user)
     if not os.path.exists(document.file_path):
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Cache key includes file mtime so stale cache is never served
+    mtime    = int(os.path.getmtime(document.file_path))
+    cache_key = f"preview:{document_id}:{mtime}"
+
+    cached = cache_get(cache_key)
+    if cached:
+        logger.info("Preview cache HIT: doc=%s", document_id)
+        return HTMLResponse(content=cached)
+
     try:
         html = DocumentService.convert_to_html(document.file_path)
+        cache_set(cache_key, html, ttl_seconds=settings.PREVIEW_CACHE_TTL)
+        logger.info("Preview cache SET: doc=%s mtime=%s", document_id, mtime)
         return HTMLResponse(content=html)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
@@ -230,10 +248,7 @@ def undo_command(
     document    = DocumentService.get_by_id(db, document_id, current_user)
     backup_dir  = os.path.dirname(document.file_path)
     backup_path = os.path.join(backup_dir, request.backup_filename)
-
-    # Path traversal guard
     _safe_path(backup_path, backup_dir)
-
     if not os.path.exists(backup_path):
         raise HTTPException(status_code=404, detail="Backup not found")
     if not request.backup_filename.startswith(
@@ -241,6 +256,7 @@ def undo_command(
         raise HTTPException(status_code=403, detail="Access denied")
     import shutil
     shutil.copy2(backup_path, document.file_path)
+    _invalidate_preview_cache(document_id)
     return {"message": "Document restored successfully"}
 
 
@@ -268,12 +284,7 @@ def execute_command(
     try:
         backup_path             = backup_document(document.file_path)
         history.backup_filename = os.path.basename(backup_path)
-
-        # Auto-cleanup old backups — keep only last N
-        _cleanup_old_backups(
-            document.file_path,
-            keep=settings.MAX_BACKUPS_PER_DOCUMENT
-        )
+        _cleanup_old_backups(document.file_path, keep=settings.MAX_BACKUPS_PER_DOCUMENT)
 
         parsed = parse_command(request.command)
         if parsed.get("error"):
@@ -287,17 +298,18 @@ def execute_command(
         executor = DocumentExecutor(document.file_path)
         results  = executor.execute_actions(parsed.get("actions", []))
         elapsed  = int((time.time() - start_time) * 1000)
-
         if elapsed > 5000:
-            logger.warning(
-                "Slow command: user=%s doc=%s elapsed=%dms cmd=%s",
-                current_user.id, document_id, elapsed, request.command[:60]
-            )
+            logger.warning("Slow command: user=%s doc=%s elapsed=%dms cmd=%s",
+                           current_user.id, document_id, elapsed, request.command[:60])
 
         history.parsed_actions    = json.dumps(parsed.get("actions", []))
         history.status            = CommandStatus.success
         history.execution_time_ms = elapsed
         db.commit()
+
+        # Invalidate preview cache — file has changed
+        _invalidate_preview_cache(document_id)
+
         return CommandResponse(
             message=parsed.get("summary", "Command executed successfully"),
             actions_performed=results,
@@ -309,7 +321,7 @@ def execute_command(
         history.status        = CommandStatus.failed
         history.error_message = str(e)
         db.commit()
-        logger.error("Command execution failed: user=%s doc=%s err=%s",
+        logger.error("Command failed: user=%s doc=%s err=%s",
                      current_user.id, document_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -363,6 +375,7 @@ def execute_selection_command(
         history.status            = CommandStatus.success
         history.execution_time_ms = int((time.time() - start_time) * 1000)
         db.commit()
+        _invalidate_preview_cache(document_id)
         return CommandResponse(
             message=(
                 f"Applied '{request.command_type}' to "
