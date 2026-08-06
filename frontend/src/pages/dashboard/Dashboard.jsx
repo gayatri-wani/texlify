@@ -1,28 +1,30 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'react-hot-toast'
-import { FileText, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react'
-import Sidebar from '../../components/layout/Sidebar'
-import UploadZone from '../../components/dashboard/UploadZone'
-import DocumentCard from '../../components/dashboard/DocumentCard'
-import ChatInterface from '../../components/dashboard/ChatInterface'
-import DocumentPreview from '../../components/dashboard/DocumentPreview'
-import UndoPanel from '../../components/dashboard/UndoPanel'
+import {
+  FileText, Plus, X, ChevronLeft,
+  ChevronRight, History, Image
+} from 'lucide-react'
+import Sidebar          from '../../components/layout/Sidebar'
+import UploadZone       from '../../components/dashboard/UploadZone'
+import DocumentCard     from '../../components/dashboard/DocumentCard'
+import ChatInterface    from '../../components/dashboard/ChatInterface'
+import DocumentPreview  from '../../components/dashboard/DocumentPreview'
+import ImageInsertModal from '../../components/dashboard/ImageInsertModal'
 import { documentService } from '../../services/documentService'
 import useAuthStore from '../../store/authStore'
 import './Dashboard.css'
-import { FileText, Plus, X, ChevronLeft, ChevronRight, History, Image } from 'lucide-react'
-import ImageInsertModal from '../../components/dashboard/ImageInsertModal'
 
 const Dashboard = () => {
   const { user }                          = useAuthStore()
   const [documents, setDocuments]         = useState([])
-  const [showImageModal, setShowImageModal] = useState(false)
   const [selectedDoc, setSelectedDoc]     = useState(null)
   const [uploading, setUploading]         = useState(false)
   const [loadingDocs, setLoadingDocs]     = useState(true)
   const [cmdLoading, setCmdLoading]       = useState(false)
   const [showUpload, setShowUpload]       = useState(false)
-  const [docsCollapsed, setDocsCollapsed] = useState(false)
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [collapsed, setCollapsed]         = useState(false)
+  const [commandLog, setCommandLog]       = useState([])
   const [previewKey, setPreviewKey]       = useState(0)
 
   useEffect(() => { fetchDocuments() }, [])
@@ -45,27 +47,12 @@ const Dashboard = () => {
       setDocuments(prev => [doc, ...prev])
       setSelectedDoc(doc)
       setShowUpload(false)
+      setPreviewKey(k => k + 1)
       toast.success('Document uploaded!')
     } catch {
       toast.error('Upload failed. Please try again.')
     } finally {
       setUploading(false)
-    }
-  }
-
-  const handleRename = async (id, title) => {
-    try {
-      await documentService.rename(id, title)
-      setDocuments(prev =>
-        prev.map(d => d.id === id ? { ...d, title } : d)
-      )
-      if (selectedDoc?.id === id) {
-        setSelectedDoc(prev => ({ ...prev, title }))
-      }
-      toast.success('Document renamed!')
-    } catch {
-      toast.error('Rename failed')
-      throw new Error('rename failed')
     }
   }
 
@@ -85,30 +72,33 @@ const Dashboard = () => {
     setCmdLoading(true)
     try {
       const result = await documentService.sendCommand(documentId, command)
+      setCommandLog(prev => [{
+        id:      Date.now(),
+        command,
+        message: result.message,
+        actions: result.actions_performed,
+        time:    new Date(),
+      }, ...prev.slice(0, 49)])
       return result
-    } catch (err) {
-      if (err?.response?.status === 429) {
-        toast.error('Too many commands — please wait a moment')
-      }
-      throw err
     } finally {
       setCmdLoading(false)
     }
   }
 
-  const handleImageInserted = useCallback(() => {
-  setPreviewKey(k => k + 1)
-}, [])
-
   const handleCommandSuccess = useCallback(() => {
     setPreviewKey(k => k + 1)
+  }, [])
+
+  const handleImageInserted = useCallback(() => {
+    setPreviewKey(k => k + 1)
+    toast.success('Image inserted successfully!')
   }, [])
 
   const handleSelectionCommand = async (documentId, command, selectionParams) => {
     setCmdLoading(true)
     try {
       let result
-      if (selectionParams && selectionParams.selected_texts) {
+      if (selectionParams?.selected_texts) {
         result = await documentService.selectionCommand(documentId, {
           command_type:    selectionParams.command_type,
           selected_texts:  selectionParams.selected_texts,
@@ -119,18 +109,20 @@ const Dashboard = () => {
           alignment:       selectionParams.alignment       || null,
           make_heading:    selectionParams.make_heading    || null,
         })
-      } else {
+      } else if (command) {
         result = await documentService.sendCommand(documentId, command)
       }
+      setCommandLog(prev => [{
+        id:      Date.now(),
+        command: `[Selection] ${selectionParams?.command_type || command}`,
+        message: result?.message || 'Applied to selection',
+        actions: result?.actions_performed || [],
+        time:    new Date(),
+      }, ...prev.slice(0, 49)])
       setPreviewKey(k => k + 1)
       toast.success('Applied to selected text!')
-      return result
-    } catch (err) {
-      if (err?.response?.status === 429) {
-        toast.error('Too many commands — please wait a moment')
-      } else {
-        toast.error('Selection command failed')
-      }
+    } catch {
+      toast.error('Selection command failed')
     } finally {
       setCmdLoading(false)
     }
@@ -145,10 +137,6 @@ const Dashboard = () => {
     }
   }
 
-  const handleUndo = useCallback(() => {
-    setPreviewKey(k => k + 1)
-  }, [])
-
   const getGreeting = () => {
     const h = new Date().getHours()
     if (h < 12) return 'Good morning'
@@ -162,6 +150,7 @@ const Dashboard = () => {
 
       <main className="dashboard__main">
 
+        {/* Topbar */}
         <div className="dashboard__topbar">
           <div>
             <h1 className="dashboard__title">
@@ -171,87 +160,129 @@ const Dashboard = () => {
               </span> 👋
             </h1>
             <p className="dashboard__subtitle">
-              Chat to edit · Click paragraph to select · Ctrl+Click for multi-select · 📎 to insert images
+              Chat to edit · Click paragraph to select · Ctrl+Click multi-select
             </p>
           </div>
-          <button
-            className="dashboard__upload-btn"
-            onClick={() => setShowUpload(!showUpload)}
-          >
-            {showUpload ? <X size={16} /> : <Plus size={16} />}
-            {showUpload ? 'Cancel' : 'Upload Document'}
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+            {/* Insert Image button */}
+            <button
+              className="dashboard__image-btn"
+              onClick={() => {
+                if (!selectedDoc) {
+                  toast.error('Select a document first')
+                  return
+                }
+                setShowImageModal(true)
+              }}
+              title="Insert image into document"
+            >
+              <Image size={16} />
+              Insert Image
+            </button>
+            {/* Upload Document button */}
+            <button
+              className="dashboard__upload-btn"
+              onClick={() => setShowUpload(!showUpload)}
+            >
+              {showUpload ? <X size={16} /> : <Plus size={16} />}
+              {showUpload ? 'Cancel' : 'Upload Document'}
+            </button>
+          </div>
         </div>
 
+        {/* Upload zone */}
         {showUpload && (
           <div className="dashboard__upload-section animate-fadeInDown">
             <UploadZone onUpload={handleUpload} uploading={uploading} />
           </div>
         )}
 
-        <div className={`dashboard__content ${docsCollapsed ? 'dashboard__content--collapsed' : ''}`}>
+        {/* Three panel layout */}
+        <div className={`dashboard__content ${collapsed ? 'dashboard__content--collapsed' : ''}`}>
 
-          {/* LEFT: Document list + Undo */}
+          {/* LEFT — Docs panel */}
           <div className="dashboard__docs-panel">
             <div className="dashboard__panel-header">
               <h2 className="dashboard__panel-title">
                 <FileText size={15} />
-                {!docsCollapsed && 'Documents'}
+                {!collapsed && 'Documents'}
               </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {!docsCollapsed && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {!collapsed && (
                   <span className="dashboard__doc-count">{documents.length}</span>
                 )}
                 <button
                   className="dashboard__collapse-btn"
-                  onClick={() => setDocsCollapsed(!docsCollapsed)}
-                  title={docsCollapsed ? 'Expand' : 'Collapse'}
+                  onClick={() => setCollapsed(!collapsed)}
+                  title={collapsed ? 'Expand' : 'Collapse'}
                 >
-                  {docsCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                  {collapsed
+                    ? <ChevronRight size={14} />
+                    : <ChevronLeft  size={14} />}
                 </button>
               </div>
             </div>
 
-            {!docsCollapsed && (
-              <>
-                <div className="dashboard__docs-list">
-                  {loadingDocs ? (
-                    <div className="dashboard__loading">
-                      {[1, 2, 3].map(i => <div key={i} className="dashboard__skeleton" />)}
-                    </div>
-                  ) : documents.length === 0 ? (
-                    <div className="dashboard__empty">
-                      <FileText size={32} />
-                      <p>No documents yet</p>
-                      <span>Upload a .docx file</span>
-                    </div>
-                  ) : (
-                    documents.map(doc => (
-                      <DocumentCard
-                        key={doc.id}
-                        document={doc}
-                        onSelect={(d) => {
-                          setSelectedDoc(d)
-                          setPreviewKey(k => k + 1)
-                        }}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        isSelected={selectedDoc?.id === doc.id}
-                      />
-                    ))
-                  )}
-                </div>
+            {!collapsed && (
+              <div className="dashboard__docs-list">
+                {loadingDocs ? (
+                  <div className="dashboard__loading">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="dashboard__skeleton" />
+                    ))}
+                  </div>
+                ) : documents.length === 0 ? (
+                  <div className="dashboard__empty">
+                    <FileText size={32} />
+                    <p>No documents yet</p>
+                    <span>Upload a .docx file</span>
+                  </div>
+                ) : (
+                  documents.map(doc => (
+                    <DocumentCard
+                      key={doc.id}
+                      document={doc}
+                      isSelected={selectedDoc?.id === doc.id}
+                      onSelect={(d) => {
+                        setSelectedDoc(d)
+                        setPreviewKey(k => k + 1)
+                      }}
+                      onDelete={handleDelete}
+                    />
+                  ))
+                )}
+              </div>
+            )}
 
-                {/* Undo Panel */}
-                <UndoPanel
-                  document={selectedDoc}
-                  onUndo={handleUndo}
-                />
-              </>
+            {/* Command log */}
+            {!collapsed && commandLog.length > 0 && (
+              <div className="dashboard__log">
+                <div className="dashboard__log-header">
+                  <History size={12} />
+                  <span>Recent commands</span>
+                </div>
+                <div className="dashboard__log-list">
+                  {commandLog.slice(0, 8).map(log => (
+                    <div key={log.id} className="dashboard__log-item">
+                      <p className="dashboard__log-cmd">"{log.command}"</p>
+                      <div className="dashboard__log-badges">
+                        {log.actions?.slice(0, 3).map((a, i) => (
+                          <span
+                            key={i}
+                            className={`dashboard__log-badge dashboard__log-badge--${a.status}`}
+                          >
+                            {a.action}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
-          {/* MIDDLE: Chat */}
+          {/* MIDDLE — Chat */}
           <div className="dashboard__chat-panel">
             <ChatInterface
               document={selectedDoc}
@@ -261,7 +292,7 @@ const Dashboard = () => {
             />
           </div>
 
-          {/* RIGHT: Live preview with selection */}
+          {/* RIGHT — Preview */}
           <div className="dashboard__preview-panel">
             <DocumentPreview
               document={selectedDoc}
@@ -273,6 +304,15 @@ const Dashboard = () => {
 
         </div>
       </main>
+
+      {/* Image Insert Modal */}
+      {showImageModal && selectedDoc && (
+        <ImageInsertModal
+          document={selectedDoc}
+          onClose={() => setShowImageModal(false)}
+          onInserted={handleImageInserted}
+        />
+      )}
     </div>
   )
 }
