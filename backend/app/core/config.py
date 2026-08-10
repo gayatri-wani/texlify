@@ -31,11 +31,22 @@ class Settings(BaseSettings):
     SENTRY_DSN:                  str  = ""
     LOG_FORMAT:                  str  = "json"
     REDIS_URL:                   str  = ""
-    PREVIEW_CACHE_TTL:           int  = 300   # seconds
+    PREVIEW_CACHE_TTL:           int  = 300
+    RESEND_API_KEY:              str  = ""
+    EMAIL_DOMAIN:                str  = "yourdomain.com"
 
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+
+    @property
+    def email_provider(self) -> str:
+        """Auto-detect which email provider to use based on what's configured."""
+        if self.RESEND_API_KEY:
+            return "resend"
+        if self.SMTP_EMAIL and self.SMTP_PASSWORD:
+            return "smtp"
+        return "none"
 
     class Config:
         env_file = ".env"
