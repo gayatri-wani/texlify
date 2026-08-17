@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     PREVIEW_CACHE_TTL:           int  = 300
     RESEND_API_KEY:              str  = ""
     EMAIL_DOMAIN:                str  = "yourdomain.com"
+    CLOUDINARY_CLOUD_NAME:       str  = ""
+    CLOUDINARY_API_KEY:          str  = ""
+    CLOUDINARY_API_SECRET:       str  = ""
 
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -41,12 +44,19 @@ class Settings(BaseSettings):
 
     @property
     def email_provider(self) -> str:
-        """Auto-detect which email provider to use based on what's configured."""
         if self.RESEND_API_KEY:
             return "resend"
         if self.SMTP_EMAIL and self.SMTP_PASSWORD:
             return "smtp"
         return "none"
+
+    @property
+    def use_cloudinary(self) -> bool:
+        return bool(
+            self.CLOUDINARY_CLOUD_NAME and
+            self.CLOUDINARY_API_KEY and
+            self.CLOUDINARY_API_SECRET
+        )
 
     class Config:
         env_file = ".env"
