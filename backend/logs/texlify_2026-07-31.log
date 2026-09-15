@@ -1,0 +1,12 @@
+2026-07-31 19:12:45 | INFO     | root | Logging initialized
+2026-07-31 19:12:52 | INFO     | root | Logging initialized
+2026-07-31 19:12:53 | INFO     | texlify | Starting Texlify v1.0.0
+2026-07-31 19:12:53 | INFO     | texlify | Environment: development
+2026-07-31 19:12:53 | INFO     | texlify | Database tables verified
+2026-07-31 19:13:56 | ERROR    | texlify.database | Database error: 401: Invalid or expired token
+2026-07-31 19:13:56 | ERROR    | texlify.database | Database error: 401: Invalid or expired token
+2026-07-31 19:14:13 | INFO     | texlify.auth | User logged in: shreyshri01@gmail.com
+2026-07-31 19:14:42 | INFO     | httpx | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-31 19:16:48 | INFO     | httpx | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-31 19:18:17 | INFO     | texlify.auth | Reset email sent to shreyshri01@gmail.com
+2026-07-31 19:20:46 | INFO     | texlify | Texlify shutting down
