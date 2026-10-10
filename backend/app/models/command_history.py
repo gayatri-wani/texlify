@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, Index
-from sqlalchemy.sql import func
+from datetime import datetime
 from app.db.database import Base
 import enum
 
@@ -23,7 +23,7 @@ class CommandHistory(Base):
     error_message     = Column(Text, nullable=True)
     backup_filename   = Column(String(500), nullable=True)
     execution_time_ms = Column(Integer, nullable=True)
-    created_at        = Column(DateTime, server_default=func.now())
+    created_at        = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("ix_cmd_doc_created", "document_id", "created_at"),

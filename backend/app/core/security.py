@@ -14,12 +14,15 @@ pwd_context = CryptContext(
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # bcrypt hard limit is 72 bytes — truncate safely
+    truncated = password.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+    return pwd_context.hash(truncated)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return pwd_context.verify(plain, hashed)
+        truncated = plain.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+        return pwd_context.verify(truncated, hashed)
     except Exception:
         return False
 
@@ -62,5 +65,4 @@ def generate_random_token(length: int = 64) -> str:
 
 
 def hash_reset_token(raw_token: str) -> str:
-    """SHA-256 hash of a reset token for safe DB storage."""
     return hashlib.sha256(raw_token.encode()).hexdigest()

@@ -1,27 +1,32 @@
+import os
+import json
+import time
+import uuid
+import shutil
+import logging
+import tempfile
+from collections import defaultdict
+from datetime import datetime
+import threading
+
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
+
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.config import settings
+from app.core.cache import cache_get, cache_set, cache_delete_pattern
 from app.models.user import User
-from app.models.document import Document
 from app.models.command_history import CommandHistory, CommandStatus
 from app.services.document_service import (
-    DocumentService, _safe_path, _cleanup_old_backups,
-    get_image_storage_key
+    DocumentService, _safe_path, _cleanup_old_backups, get_image_storage_key
 )
 from app.schemas.document import DocumentResponse, CommandRequest, CommandResponse
 from app.agent.parser import parse_command
-from app.agent.executor import DocumentExecutor, backup_document
-from app.core.config import settings
-from app.core.cache import cache_get, cache_set, cache_delete_pattern
-from app.core.storage import upload_file, download_file, get_temp_copy, cleanup_temp_copy
-import os, json, time, uuid, shutil, logging, tempfile
-from collections import defaultdict
-import threading
+from app.agent.executor import DocumentExecutor
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 logger = logging.getLogger("texlify.documents")
@@ -52,8 +57,6 @@ def _invalidate_preview_cache(document_id: int):
 
 
 def _backup_document(local_path: str) -> str:
-    """Create a backup of the local file. Returns backup path."""
-    from datetime import datetime
     timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = f"{local_path}.backup_{timestamp}"
     shutil.copy2(local_path, backup_path)
@@ -100,7 +103,7 @@ def upload_image(
     db:           Session    = Depends(get_db),
     current_user: User       = Depends(get_current_user)
 ):
-    allowed = ["image/jpeg","image/png","image/gif","image/webp","image/bmp"]
+    allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"]
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="Only image files allowed")
     contents  = file.file.read()
@@ -108,37 +111,32 @@ def upload_image(
     if file_size > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image size exceeds 10MB")
 
-    ext             = os.path.splitext(file.filename)[1].lower()
+    ext             = os.path.splitext(file.filename)[1].lower() or ".jpg"
     stored_filename = f"img_{uuid.uuid4().hex}{ext}"
-    storage_key     = get_image_storage_key(current_user.id, stored_filename)
 
-    # Write to temp file
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-    tmp.write(contents)
-    tmp.close()
-
-    try:
-        if settings.use_cloudinary:
-            upload_file(tmp.name, storage_key)
-            server_path = tmp.name  # temp path for executor to use immediately
-        else:
-            img_dir = os.path.join("uploads", str(current_user.id), "images")
-            os.makedirs(img_dir, exist_ok=True)
-            server_path = os.path.join(img_dir, stored_filename)
-            _safe_path(server_path, img_dir)
-            shutil.copy2(tmp.name, server_path)
-    finally:
-        if settings.use_cloudinary:
-            pass  # keep tmp alive for executor
-        else:
-            os.remove(tmp.name)
+    if settings.use_cloudinary:
+        from app.core.storage import upload_file
+        storage_key = get_image_storage_key(current_user.id, stored_filename)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        tmp.write(contents)
+        tmp.close()
+        upload_file(tmp.name, storage_key)
+        server_path = tmp.name
+    else:
+        img_dir = os.path.join("uploads", str(current_user.id), "images")
+        os.makedirs(img_dir, exist_ok=True)
+        server_path = os.path.join(img_dir, stored_filename)
+        _safe_path(server_path, img_dir)
+        with open(server_path, "wb") as f:
+            f.write(contents)
+        storage_key = server_path
 
     return {
-        "filename":    stored_filename,
-        "server_path": server_path,
-        "storage_key": storage_key,
-        "url":         f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
-        "size":        file_size,
+        "filename":     stored_filename,
+        "server_path":  server_path,
+        "storage_key":  storage_key,
+        "url":          f"/api/v1/documents/images/{current_user.id}/{stored_filename}",
+        "size":         file_size,
         "content_type": file.content_type
     }
 
@@ -196,7 +194,8 @@ def rename_document(
     if not request.title or not request.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
     document.title = request.title.strip()
-    db.commit(); db.refresh(document)
+    db.commit()
+    db.refresh(document)
     return {"message": "Document renamed", "title": document.title}
 
 
@@ -219,19 +218,14 @@ def download_document(
 ):
     document   = DocumentService.get_by_id(db, document_id, current_user)
     local_path = DocumentService.get_local_path(document)
-    try:
-        return FileResponse(
-            path=local_path,
-            filename=document.original_filename,
-            media_type=(
-                "application/vnd.openxmlformats-officedocument"
-                ".wordprocessingml.document"
-            )
+    return FileResponse(
+        path=local_path,
+        filename=document.original_filename,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument"
+            ".wordprocessingml.document"
         )
-    finally:
-        if settings.use_cloudinary:
-            # Clean up after response is sent
-            pass  # FastAPI handles this
+    )
 
 
 @router.get("/{document_id}/preview")
@@ -240,9 +234,7 @@ def preview_document(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user)
 ):
-    document = DocumentService.get_by_id(db, document_id, current_user)
-
-    # Try cache first
+    document  = DocumentService.get_by_id(db, document_id, current_user)
     cache_key = f"preview:{document_id}:v1"
     cached    = cache_get(cache_key)
     if cached:
@@ -266,17 +258,13 @@ def get_backups(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user)
 ):
-    # In Cloudinary mode, backups are stored as Cloudinary resources
-    # For simplicity we track them in the command history instead
     document = DocumentService.get_by_id(db, document_id, current_user)
     if settings.use_cloudinary:
-        # Return backups from command history
-        from app.models.command_history import CommandHistory, CommandStatus
         history = (
             db.query(CommandHistory)
             .filter(
-                CommandHistory.document_id == document_id,
-                CommandHistory.status      == CommandStatus.success,
+                CommandHistory.document_id    == document_id,
+                CommandHistory.status         == CommandStatus.success,
                 CommandHistory.backup_filename != None
             )
             .order_by(CommandHistory.created_at.desc())
@@ -325,9 +313,8 @@ def undo_command(
     current_user: User    = Depends(get_current_user)
 ):
     document = DocumentService.get_by_id(db, document_id, current_user)
-
     if settings.use_cloudinary:
-        # Restore from Cloudinary backup key
+        from app.core.storage import download_file, upload_file, cleanup_temp_copy
         backup_key = request.backup_filename
         local_path = DocumentService.get_local_path(document)
         try:
@@ -370,26 +357,25 @@ def execute_command(
         command_text=request.command,
         status=CommandStatus.processing
     )
-    db.add(history); db.commit()
-    start_time  = time.time()
-    local_path  = None
+    db.add(history)
+    db.commit()
+
+    start_time = time.time()
+    local_path = None
 
     try:
-        # Get local working copy
         local_path = DocumentService.get_local_path(document)
 
-        # Create backup
         if settings.use_cloudinary:
+            from app.core.storage import upload_file
             backup_key = f"{document.file_path}.backup_{int(time.time())}"
             upload_file(local_path, backup_key)
             history.backup_filename = backup_key
         else:
             backup_path             = _backup_document(local_path)
             history.backup_filename = os.path.basename(backup_path)
-            _cleanup_old_backups(local_path,
-                                 keep=settings.MAX_BACKUPS_PER_DOCUMENT)
+            _cleanup_old_backups(local_path, keep=settings.MAX_BACKUPS_PER_DOCUMENT)
 
-        # Parse command
         parsed = parse_command(request.command)
         if parsed.get("error"):
             history.status        = CommandStatus.failed
@@ -400,7 +386,6 @@ def execute_command(
                 detail=parsed.get("summary", "Could not understand command")
             )
 
-        # Execute
         executor = DocumentExecutor(local_path)
         results  = executor.execute_actions(parsed.get("actions", []))
         elapsed  = int((time.time() - start_time) * 1000)
@@ -409,9 +394,8 @@ def execute_command(
             logger.warning("Slow command: user=%s doc=%s elapsed=%dms",
                            current_user.id, document_id, elapsed)
 
-        # Push changes back to Cloudinary
         DocumentService.release_local_path(document, local_path, modified=True)
-        local_path = None  # mark as released
+        local_path = None
 
         history.parsed_actions    = json.dumps(parsed.get("actions", []))
         history.status            = CommandStatus.success
@@ -425,6 +409,7 @@ def execute_command(
             actions_performed=results,
             status="success"
         )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -439,11 +424,11 @@ def execute_command(
         )
     finally:
         if local_path and settings.use_cloudinary:
+            from app.core.storage import cleanup_temp_copy
             cleanup_temp_copy(local_path, document.file_path)
 
 
-@router.post("/{document_id}/selection-command",
-             response_model=CommandResponse)
+@router.post("/{document_id}/selection-command", response_model=CommandResponse)
 def execute_selection_command(
     document_id:  int,
     request:      SelectionCommandRequest,
@@ -455,8 +440,8 @@ def execute_selection_command(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many commands. Max {RATE_LIMIT_COMMANDS} per minute."
         )
-    document   = DocumentService.get_by_id(db, document_id, current_user)
-    history    = CommandHistory(
+    document = DocumentService.get_by_id(db, document_id, current_user)
+    history  = CommandHistory(
         user_id=current_user.id,
         document_id=document_id,
         command_text=(
@@ -465,7 +450,9 @@ def execute_selection_command(
         ),
         status=CommandStatus.processing
     )
-    db.add(history); db.commit()
+    db.add(history)
+    db.commit()
+
     start_time = time.time()
     local_path = None
 
@@ -473,14 +460,14 @@ def execute_selection_command(
         local_path = DocumentService.get_local_path(document)
 
         if settings.use_cloudinary:
+            from app.core.storage import upload_file
             backup_key = f"{document.file_path}.backup_{int(time.time())}"
             upload_file(local_path, backup_key)
             history.backup_filename = backup_key
         else:
             backup_path             = _backup_document(local_path)
             history.backup_filename = os.path.basename(backup_path)
-            _cleanup_old_backups(local_path,
-                                 keep=settings.MAX_BACKUPS_PER_DOCUMENT)
+            _cleanup_old_backups(local_path, keep=settings.MAX_BACKUPS_PER_DOCUMENT)
 
         executor = DocumentExecutor(local_path)
         results  = executor.execute_actions([{
@@ -513,6 +500,7 @@ def execute_selection_command(
             actions_performed=results,
             status="success"
         )
+
     except Exception as e:
         history.status        = CommandStatus.failed
         history.error_message = str(e)
@@ -523,4 +511,5 @@ def execute_selection_command(
         )
     finally:
         if local_path and settings.use_cloudinary:
+            from app.core.storage import cleanup_temp_copy
             cleanup_temp_copy(local_path, document.file_path)

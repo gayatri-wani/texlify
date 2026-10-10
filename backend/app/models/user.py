@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
-from sqlalchemy.sql import func
+from datetime import datetime
 from app.db.database import Base
 
 
@@ -15,6 +15,6 @@ class User(Base):
     verification_token   = Column(String(255), nullable=True)
     reset_password_token = Column(String(255), nullable=True)
     reset_token_expires  = Column(DateTime, nullable=True)
-    created_at           = Column(DateTime, server_default=func.now())
-    updated_at           = Column(DateTime, server_default=func.now(),
-                                  onupdate=func.now())
+    created_at           = Column(DateTime, default=datetime.utcnow)
+    updated_at           = Column(DateTime, default=datetime.utcnow,
+                                  onupdate=datetime.utcnow)

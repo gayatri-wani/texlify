@@ -32,7 +32,6 @@ def _convert_image(image):
 
 
 def _safe_path(path: str, base_dir: str) -> str:
-    """Resolve path and assert it stays inside base_dir. Raises 403 if not."""
     resolved = os.path.realpath(path)
     base     = os.path.realpath(base_dir)
     if not resolved.startswith(base + os.sep) and resolved != base:
@@ -41,7 +40,6 @@ def _safe_path(path: str, base_dir: str) -> str:
 
 
 def _cleanup_old_backups(file_path: str, keep: int = None):
-    """Keep only the N most recent backups for a document."""
     if keep is None:
         keep = settings.MAX_BACKUPS_PER_DOCUMENT
     pattern = f"{file_path}.backup_*"
@@ -54,21 +52,15 @@ def _cleanup_old_backups(file_path: str, keep: int = None):
 
 
 def get_storage_key(user_id: int, stored_filename: str) -> str:
-    """Build the storage key/path for a document."""
     if settings.use_cloudinary:
         return f"texlify/users/{user_id}/docs/{stored_filename}"
-    else:
-        return os.path.join(settings.UPLOAD_DIR, str(user_id), stored_filename)
+    return os.path.join(settings.UPLOAD_DIR, str(user_id), stored_filename)
 
 
 def get_image_storage_key(user_id: int, stored_filename: str) -> str:
-    """Build the storage key/path for an image."""
     if settings.use_cloudinary:
         return f"texlify/users/{user_id}/images/{stored_filename}"
-    else:
-        return os.path.join(
-            settings.UPLOAD_DIR, str(user_id), "images", stored_filename
-        )
+    return os.path.join(settings.UPLOAD_DIR, str(user_id), "images", stored_filename)
 
 
 class DocumentService:
@@ -181,18 +173,20 @@ class DocumentService:
         stored_filename = f"{uuid.uuid4().hex}{ext}"
 
         if settings.use_cloudinary:
-            # Write to temp file, upload to Cloudinary
+            from app.core.storage import upload_file
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
             tmp.write(contents)
             tmp.close()
             try:
                 storage_key = get_storage_key(user.id, stored_filename)
-                from app.core.storage import upload_file
                 upload_file(tmp.name, storage_key)
                 page_count = DocumentService.get_page_count(tmp.name)
                 file_path  = storage_key
             finally:
-                os.remove(tmp.name)
+                try:
+                    os.remove(tmp.name)
+                except Exception:
+                    pass
         else:
             upload_dir = DocumentService.get_user_upload_dir(user.id)
             file_path  = os.path.join(upload_dir, stored_filename)
@@ -214,7 +208,12 @@ class DocumentService:
             file_size=file_size,
             page_count=page_count,
         )
-        db.add(document); db.commit(); db.refresh(document)
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        from sqlalchemy import inspect
+        db.expire(document)
+        db.refresh(document)
         logger.info("Document uploaded: user=%s file=%s size=%d",
                     user.id, stored_filename, file_size)
         return document
@@ -249,15 +248,15 @@ class DocumentService:
     @staticmethod
     def get_local_path(document) -> str:
         """
-        Get a local path for the document file.
-        In Cloudinary mode, downloads to a temp file.
-        In local mode, returns the file path directly.
+        Returns a local file path for the document.
+        Cloudinary mode: downloads to a temp file.
+        Local mode: returns file_path directly.
         """
         if settings.use_cloudinary:
+            from app.core.storage import download_file
             ext = os.path.splitext(document.stored_filename)[1] or ".docx"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
             tmp.close()
-            from app.core.storage import download_file
             download_file(document.file_path, tmp.name)
             return tmp.name
         else:
@@ -266,8 +265,8 @@ class DocumentService:
     @staticmethod
     def release_local_path(document, local_path: str, modified: bool = False):
         """
-        After processing, push changes back to Cloudinary if modified.
-        In local mode, does nothing (file already in place).
+        After processing, push changes back to Cloudinary if needed.
+        Local mode: does nothing.
         """
         if settings.use_cloudinary:
             from app.core.storage import upload_file, cleanup_temp_copy
@@ -280,13 +279,19 @@ class DocumentService:
         document = DocumentService.get_by_id(db, document_id, user)
         if settings.use_cloudinary:
             from app.core.storage import delete_file
-            delete_file(document.file_path)
+            try:
+                delete_file(document.file_path)
+            except Exception as e:
+                logger.warning("Cloudinary delete failed: %s", e)
         else:
-            upload_dir = DocumentService.get_user_upload_dir(user.id)
             if os.path.exists(document.file_path):
-                _safe_path(document.file_path, upload_dir)
-                _cleanup_old_backups(document.file_path, keep=0)
-                os.remove(document.file_path)
+                try:
+                    upload_dir = DocumentService.get_user_upload_dir(document.user_id)
+                    _safe_path(document.file_path, upload_dir)
+                    _cleanup_old_backups(document.file_path, keep=0)
+                    os.remove(document.file_path)
+                except Exception as e:
+                    logger.warning("File delete failed: %s", e)
         document.is_active = False
         db.commit()
         return True
