@@ -7,11 +7,18 @@ import logging
 
 logger = logging.getLogger("texlify.database")
 
+# Force pymysql driver
+database_url = settings.DATABASE_URL
+if database_url.startswith("mysql://"):
+    database_url = database_url.replace("mysql://", "mysql+pymysql://", 1)
+if database_url.startswith("mysql+mysqldb://"):
+    database_url = database_url.replace("mysql+mysqldb://", "mysql+pymysql://", 1)
+
 engine = create_engine(
-    settings.DATABASE_URL,
+    database_url,
     poolclass=QueuePool,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,
+    max_overflow=10,
     pool_timeout=30,
     pool_recycle=1800,
     pool_pre_ping=True,
