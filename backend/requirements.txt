@@ -1,7 +1,8 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-PyMySQL[rsa]
+pymysql
+cryptography
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
@@ -18,3 +19,4 @@ resend
 sentry-sdk[fastapi]
 cloudinary
 requests
+bcrypt==4.0.1
